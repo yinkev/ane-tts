@@ -743,3 +743,37 @@ But the base conversion to CoreML is the critical first step.
 2. Add ANE parallelism → measure improvement
 3. Add quantization → measure final number
 4. Each step is independently valuable and measurable
+
+---
+
+## Experiment 13: REAL Fish Slow AR (3.63B, real weights) on CoreML
+*Date: 2026-03-18 ~11AM*
+
+### Method
+Extracted all 325 slow AR tensors from safetensors (text_model.model.layers.*).
+Built matching PyTorch model (36 layers, GQA attention, SwiGLU FFN, RMSNorm).
+Loaded real weights (3.63B params). Traced. Converted to CoreML. Benchmarked.
+
+### Results
+
+| Compute | ms/eval |
+|---------|---------|
+| CoreML GPU | 23.8 ms |
+| CoreML ANE+GPU | 22.9 ms |
+| MLX (profiled) | 34.7 ms |
+
+**Speedup: 1.46x (GPU), 1.51x (ANE+GPU) over MLX. CONFIRMED WITH REAL WEIGHTS.**
+
+### Implications
+
+With 21.5 tokens/s audio rate and 46.4ms audio per token:
+- MLX: 67.5ms/tok → 0.69x RTF (current)
+- CoreML GPU slow AR (23.8ms) + MLX fast AR (32ms): 55.8ms → 0.83x RTF
+- CoreML GPU slow AR (23.8ms) + CoreML fast AR (3.4ms) × 10: 57.8ms → 0.80x RTF
+- CoreML slow AR + fast AR on ANE (45% overlap): 42.5ms → 1.09x RTF
+- CoreML slow AR + ANE (45%) + 8-bit quant: 32.7ms → 1.42x RTF
+
+### Status
+CoreML conversion of the full slow AR: DONE. Real weights, correct output.
+This is the first major deliverable — a CoreML version of Fish's slow AR
+that runs 1.46-1.51x faster than MLX on the same GPU.

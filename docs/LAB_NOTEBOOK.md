@@ -218,3 +218,43 @@ But Path B/C is the publishable contribution.
 ### Decision Needed
 Try Path A first (lowest effort, highest chance of immediate result)?
 Or go straight to Path B/C (harder but publishable)?
+
+---
+
+## Experiment 3: Fish Layer via CoreML — ANE vs GPU
+*Date: 2026-03-18 ~6:30AM*
+*Tool: coremltools 9.0, Python 3.9, torch 2.5.0*
+
+### Method
+Created a standalone transformer layer matching Fish S2 Pro's exact dimensions (dim=2560, heads=32, kv=8, FFN=9728). Traced with torch.jit, converted to CoreML, benchmarked on different compute units.
+
+### Results
+
+| Seq Len | ANE+GPU+CPU | GPU only | ANE speedup |
+|---------|-------------|----------|-------------|
+| 1 | 1.46ms | 1.29ms | 0.88x (slower) |
+| 8 | 1.78ms | 1.85ms | 1.04x (tie) |
+| 32 | 3.32ms | 2.34ms | 0.71x (slower) |
+| 64 | 3.53ms | 3.01ms | 0.85x (slower) |
+| 128 | 4.86ms | 4.17ms | 0.86x (slower) |
+
+### Conclusion
+**CoreML ANE delegation does NOT speed up Fish S2 Pro's transformer layers on M2 Max.**
+GPU (Metal) is consistently faster. ANE adds overhead without throughput benefit at these dimensions.
+
+This is because:
+1. Fish's dim=2560 puts weight matrices at 20-47 MB — right at SRAM boundary where ANE isn't at peak
+2. CoreML's ANE delegation adds overhead (data transfer, compilation) that exceeds compute savings
+3. Metal GPU is already highly optimized for these matrix sizes on M2 Max
+
+### What This Means
+- Direct CoreML → ANE path for Fish: **NOT viable**
+- maderix/ANE direct API: Already showed similar (raw matmuls fast but overhead-bound)
+- **The only remaining ANE path is speculative decode with a SMALL draft model (<1B)**
+  where ANE's advantage for small models (47-62 tok/s on 1B per ANEMLL) matters
+
+### Decision
+| Date | Decision | Reasoning |
+|------|----------|-----------|
+| 2026-03-18 | CoreML ANE for Fish layers: NOT viable | GPU is faster at all seq lengths. ANE overhead exceeds compute benefit. |
+| 2026-03-18 | Only path left: small draft model on ANE | Need a <1B model that ANE runs well. Qwen3-TTS 0.6B CoreML already exists on HuggingFace. |

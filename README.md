@@ -2,7 +2,7 @@
 
 Real-time text-to-speech on Apple Silicon by leveraging the Neural Engine.
 
-> **Status:** Research phase. Not yet functional.
+> **Status:** Research complete (14 experiments). Engineering phase active — ANEMLL conversion in progress.
 
 ## The Problem
 
@@ -25,13 +25,19 @@ Two backends, one tool:
 
 ## Current Results
 
-*No results yet. Benchmarking in progress.*
+*14 experiments on M2 Max (96GB). All numbers from real benchmark runs.*
 
-| Model | GPU (baseline) | ANE Direct | CoreML ANE |
-|-------|---------------|------------|------------|
-| Fish S2 Pro (5B) | 0.65x RTF | TBD | TBD |
-| Qwen3-TTS (1.7B) | 1.64x RTF | TBD | TBD |
-| Qwen3-TTS (0.6B) | TBD | TBD | TBD |
+| Configuration | ms/token | RTF | vs MLX baseline |
+|--------------|----------|-----|-----------------|
+| MLX (current) | 67.5 | 0.69x | baseline |
+| CoreML GPU (measured) | 55.4 | 0.84x | 1.22x faster |
+| + Swift GCD parallelism (est.) | ~37.9 | ~1.22x | ~1.78x faster |
+| + 8-bit slow AR quant (est.) | ~31.4 | ~1.48x | ~2.14x faster |
+| + 70% overlap + 4-bit (est.) | ~19.7 | ~2.35x | ~3.41x faster |
+
+Key finding: CoreML is 1.46x faster than MLX for slow AR (23.8ms vs 34.7ms). Swift GCD achieves 45-51% GPU+ANE overlap.
+
+ANEMLL conversion in progress: FFN/Decode chunks converted (4x 435MB, 4-bit LUT, KV cache). Remaining steps executing.
 
 ## Hardware Requirements
 

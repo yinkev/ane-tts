@@ -10,7 +10,17 @@ Two backends: direct ANE access (maderix/ANE, biggest speedup) and CoreML (stabl
 If direct inference isn't enough: speculative TTS decoding — small draft model on ANE, big model verifies on GPU.
 
 ## Status
-Research phase. Decision tree at docs/DECISION_TREE.md. No inference code yet.
+Research phase COMPLETE (14 experiments on M2 Max). Engineering phase ACTIVE.
+
+ANEMLL conversion of Fish S2 Pro's slow AR (3.63B) to ANE-optimized CoreML is COMPLETE:
+- All 7 steps done: embeddings, LM head (6-bit), FFN decode (4-bit x4), prefill (4-bit x4), combine, compile, meta.yaml
+- 6 compiled .mlmodelc files at /tmp/fish_slow_ar_anemll/ (~3.5GB total, down from 6.8GB BF16)
+- Initial benchmark: embeddings 0.6ms, LM head 5.4ms on ANE+GPU. FFN chunks load OK.
+- CoreML is 1.46x faster than MLX for slow AR (23.8ms vs 34.7ms per token)
+- Swift GCD gives 45-51% GPU+ANE overlap for pipeline parallelism
+- Next: wire into Fish's generation loop, full KV-cache benchmark, end-to-end RTF
+
+Decision tree at docs/DECISION_TREE.md. Lab notebook at docs/LAB_NOTEBOOK.md.
 
 ## Key Tools
 - maderix/ANE (github.com/maderix/ANE) — direct ANE access, 6.2K stars

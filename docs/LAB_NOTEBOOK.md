@@ -926,8 +926,11 @@ Fish S2 Pro's slow AR is now in CoreML format with:
 - Step 1 (Embeddings): ✅
 - Step 2 (LM Head): ✅  
 - Step 3 (FFN/Decode): ✅ (4 chunks × 435MB = 1.74GB, 4-bit LUT)
-- Step 4 (Prefill): ❌ (same mask dimension issue, needs additional fix in model's prefill path)
-- Step 5-8: Blocked by Step 4
+- Step 4 (Prefill): ✅ (fixed after k_seq_len bug in qwen2_5_model.py line 503)
+- Step 5 (Combine): ✅
+- Step 6 (Compile): ✅ (6 .mlmodelc files)
+- Step 7 (Meta.yaml): ✅
+- Step 8 (Benchmark): ✅ (embeddings 0.6ms, LM head 5.4ms on ANE+GPU)
 
 ### What We Have
 The DECODE path (token generation) is fully converted. This is the one that matters
@@ -945,3 +948,75 @@ function or in the converter's prefill wrapper for the remaining mask creation.
 Can potentially test the FFN chunks directly without the full ANEMLL pipeline.
 Load them as CoreML models, benchmark on ANE, and measure token generation speed
 with KV cache.
+
+---
+
+## Engineering Phase: Full ANEMLL Conversion
+*Date: 2026-03-18 ~2PM*
+
+### Context
+With the causal mask fix proven on Step 3, applying the same fix across all conversion
+steps to complete the full pipeline.
+
+### The Mask Dimension Bug (Root Cause)
+`qwen2_5_converter.py` lines 352-360 constructed causal mask and update mask using
+`self.context_length` (128 for our config) instead of `state_length` (256). The KV cache
+is sized to `state_length`, so the attention mask must match that dimension, not the
+context window. This caused shape mismatches during tracing:
+- Expected mask: `[1, 1, 1, 256]` (matching KV cache seq dim)
+- Got mask: `[1, 1, 1, 128]` (matching context_length)
+
+The same pattern existed in 4 locations:
+- Lines 352-360 (initial fix)
+- Line 616 (fixed — this unblocked Step 3)
+- Line 726 (fixed)
+- Line 830 (fixed)
+
+All 4 changed `self.context_length` to `state_length` for mask dimension construction.
+
+### Step 3 (FFN/Decode): SUCCESS
+The decode path — the critical path called ~108 times per utterance — converted
+successfully into 4 CoreML chunks:
+- 4 chunks x 435 MB = 1.74 GB total
+- 4-bit LUT quantized (down from 6.8 GB BF16, 75% size reduction)
+- KV cache support via ANEMLL's state management
+- ANE-compatible Conv2d layers (ANEMLL's standard format)
+- Output location: `/tmp/fish_slow_ar_anemll/`
+
+### Steps 1, 2, 4: COMPLETE
+All conversion steps finished after fixing 3 bugs:
+1. `qwen2_5_converter.py` lines 352, 359: mask/update_mask used context_length instead of state_length
+2. `qwen2_5_converter.py` lines 616, 726, 830: same mask dimension mismatch
+3. `qwen2_5_model.py` line 503: k_seq_len clipped to context_length (128) instead of state_length (256), causing attn_logits vs mask shape mismatch in forward_prefill
+
+### Steps 5-7: COMPLETE
+- Step 5: FFN + Prefill chunks combined into multi-function models (weight dedup applied)
+- Step 6: All 6 .mlmodelc files compiled (embeddings, LM head, 4 FFN+PF chunks)
+- Step 7: meta.yaml generated
+
+### Step 8: Initial Benchmark
+All models load and run on both GPU and ANE+GPU:
+
+| Component | GPU | ANE+GPU |
+|-----------|-----|---------|
+| Embeddings | 0.59 ms | 0.66 ms |
+| LM Head (6-bit) | 5.92 ms | 5.36 ms |
+| Total overhead | 6.51 ms | 6.02 ms |
+
+FFN chunks (the heavy transformer layers) require KV cache state management for full inference. Next: wire into Fish's generation loop.
+
+### Final Conversion Summary
+| Part | Size | Quant |
+|------|------|-------|
+| Embeddings | 761 MB | None |
+| FFN+Prefill (x4 chunks) | 4 x 435 MB | 4-bit LUT |
+| LM Head | 288 MB | 6-bit LUT |
+| **Total** | **~3.5 GB** | **Mixed** |
+
+### Remaining Path to End-to-End
+1. Wire CoreML models into Fish's generation loop
+2. Full single-token inference benchmark with KV cache
+3. Swift concurrent dispatch: slow AR on GPU + fast AR on ANE
+4. Audio quality verification vs MLX baseline
+5. End-to-end RTF measurement
+5. Measure end-to-end RTF with real audio generation

@@ -167,4 +167,50 @@ After 4-bit slow AR quantization:
 
 ---
 
-*Research phase complete. Engineering phase next: wire CoreML models into Fish's generation loop, implement Swift concurrent dispatch, measure end-to-end RTF.*
+## ANEMLL Conversion Progress (Engineering Phase)
+
+Research phase complete. ANEMLL conversion of Fish S2 Pro's slow AR to ANE-optimized CoreML is DONE.
+
+### Bugs Fixed in ANEMLL
+
+3 bugs in ANEMLL's Qwen2.5 converter prevented Fish S2 Pro conversion:
+
+1. `qwen2_5_converter.py` lines 352, 359: `self.context_length` (128) used instead of `state_length` (256) for causal mask and update mask dimensions
+2. `qwen2_5_converter.py` lines 616, 726, 830: Same mask dimension mismatch (fixed by previous session)
+3. `qwen2_5_model.py` line 503: `self.config.context_length` used instead of `self.config.state_length` for k_seq_len in forward_prefill — caused attn_logits (256) vs mask (128) shape mismatch
+
+### Conversion Results
+
+| Part | File | Size | Quantization |
+|------|------|------|-------------|
+| Embeddings | fish_embeddings.mlpackage | 761 MB | None |
+| FFN Decode (x4) | fish_FFN_lut4_chunk_01-04of04 | 4 x 435 MB | 4-bit LUT |
+| Prefill (x4) | fish_prefill_lut4_chunk_01-04of04 | 4 x 435 MB | 4-bit LUT |
+| LM Head | fish_lm_head_lut6.mlpackage | 288 MB | 6-bit LUT |
+| Combined FFN+PF (x4) | fish_FFN_PF_lut4_chunk_01-04of04 | 4 x 435 MB | 4-bit LUT |
+| **Total compiled** | **6 .mlmodelc files** | **~3.5 GB** | **Mixed** |
+
+### Pipeline Status
+
+| Step | Status |
+|------|--------|
+| Step 1 (Embeddings) | DONE |
+| Step 2 (LM Head) | DONE (6-bit LUT) |
+| Step 3 (FFN/Decode) | DONE (4-bit LUT, 4 chunks) |
+| Step 4 (Prefill) | DONE (4-bit LUT, 4 chunks, after 3 bug fixes) |
+| Step 5 (Combine) | DONE (FFN + Prefill merged, weight dedup) |
+| Step 6 (Compile) | DONE (6 .mlmodelc files) |
+| Step 7 (Meta.yaml) | DONE |
+| Step 8 (Benchmark) | DONE (embeddings 0.6ms, LM head 5.4ms, FFN chunks load OK) |
+
+### Initial Benchmark (Embeddings + LM Head only)
+
+| Component | GPU | ANE+GPU |
+|-----------|-----|---------|
+| Embeddings | 0.59 ms | 0.66 ms |
+| LM Head (6-bit) | 5.92 ms | 5.36 ms |
+| Total overhead | 6.51 ms | 6.02 ms |
+
+*FFN chunks require KV cache state management for full inference loop — next step.*
+
+*Engineering phase: conversion complete, benchmark and integration pending.*

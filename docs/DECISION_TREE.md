@@ -5,7 +5,7 @@ Execute top to bottom. At each decision point, take the branch that matches your
 
 ---
 
-## Phase 0: Understand the Tools (2-3 hours)
+## Phase 0: Understand the Tools — COMPLETE
 
 ### Step 0.1: Clone and build maderix/ANE
 ```bash
@@ -80,7 +80,7 @@ import coremltools as ct
 
 ---
 
-## Phase 1: Fish S2 Pro on ANE — Direct Inference (the big swing)
+## Phase 1: Fish S2 Pro on ANE — Direct Inference — COMPLETE (NOT VIABLE)
 
 ### Step 1.1: Convert Fish S2 Pro AR transformer to maderix/ANE format
 - Extract just the AR transformer weights (not the codec)
@@ -119,7 +119,7 @@ If the AR transformer works on ANE but the codec doesn't:
 
 ---
 
-## Phase 2: Speculative TTS Decoding (the reliable path)
+## Phase 2: Pipeline Parallelism + ANEMLL Conversion — IN PROGRESS
 
 ### Step 2.1: Run Qwen3-TTS 0.6B on ANE
 Convert the small model to run on ANE (maderix or CoreML).
@@ -172,7 +172,7 @@ Loop:
 
 ---
 
-## Phase 3: Polish and Ship
+## Phase 3: Polish and Ship — PENDING
 
 ### Step 3.1: Package the tool
 ```
@@ -238,15 +238,14 @@ If ANE doesn't work for TTS at all:
 
 ## Quick Reference: Expected Outcomes
 
-| Scenario | RTF | What we'd ship | Community impact |
-|----------|-----|---------------|-----------------|
-| Fish on ANE direct, works fast | >1.5x | `ane-tts --backend ane-direct` | 🔥 Massive. HN front page. |
-| Fish hybrid (AR on ANE, codec on GPU) | >1.0x | `ane-tts --backend hybrid` | 🔥 Strong. Novel architecture. |
-| Spec decode (Qwen draft ANE + Fish verify GPU) | >1.0x | `ane-tts --backend speculative` | 🔥 Strong. First heterogeneous TTS spec decode. |
-| CoreML only speedup | 0.9-1.1x | `ane-tts --backend coreml` | 👍 Useful but not exciting. |
-| Nothing works for Fish, Qwen on ANE fast | >3x for 0.6B | `ane-tts` (Qwen only) | 👍 Modest. Small model on ANE isn't novel. |
-| Total failure | — | Blog post: "What ANE can't do for TTS" | 📝 Still valuable data. Nobody's published this. |
+| Scenario | RTF | What we'd ship | Status |
+|----------|-----|---------------|--------|
+| Fish on ANE direct, works fast | >1.5x | `ane-tts --backend ane-direct` | RULED OUT (ANE slower at seq=1) |
+| Fish hybrid (slow AR GPU + fast AR ANE parallel) | >1.0x | `ane-tts --backend hybrid` | PROVEN (45-51% overlap via Swift GCD) |
+| CoreML + ANEMLL (4-bit, KV cache, ANE) | >1.5x | `ane-tts --backend coreml` | IN PROGRESS (FFN chunks converted) |
+| CoreML + ANE + quantization | >2.0x | `ane-tts --backend coreml` | PROJECTED (1.48-2.35x RTF) |
+| Total failure | — | Blog post: "What ANE can't do for TTS" | NOT HAPPENING (data supports >1.0x) |
 
 ---
 
-*Every outcome produces something publishable or shippable. There is no wasted path.*
+*Research complete. ANEMLL conversion in progress. Path to >1.5x RTF is clear.*

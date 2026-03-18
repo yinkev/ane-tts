@@ -1,0 +1,28 @@
+# Build
+.build/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Models (too large)
+*.safetensors
+*.gguf
+*.bin
+*.mlmodelc/
+*.mlpackage/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Test artifacts
+*.wav
+*.raw
+*.pcm
+
+# Environment
+.env
+.venv/

@@ -1,0 +1,32 @@
+# ane-tts
+
+> Real-time text-to-speech on Apple Silicon by leveraging the Neural Engine. Makes 5B TTS models (Fish S2 Pro) run at real-time speed on consumer Macs.
+
+## Problem
+Fish S2 Pro (5B params, best open-source TTS) runs at 0.65x RTF on Metal GPU. Sub-realtime = unusable for conversation. The ANE (15.8 TOPS) sits idle during inference.
+
+## Approach
+Two backends: direct ANE access (maderix/ANE, biggest speedup) and CoreML (stable, for everyone).
+If direct inference isn't enough: speculative TTS decoding — small draft model on ANE, big model verifies on GPU.
+
+## Status
+Research phase. Decision tree at docs/DECISION_TREE.md. No inference code yet.
+
+## Key Tools
+- maderix/ANE (github.com/maderix/ANE) — direct ANE access, 6.2K stars
+- ANEMLL (github.com/Anemll/Anemll) — LLMs on ANE
+- coremltools — Apple's official CoreML conversion
+- mlx-audio — current TTS inference (Metal GPU)
+
+## Models
+- Fish S2 Pro 5B BF16 (~10GB) — target model, best quality
+- Qwen3-TTS 1.7B BF16 (~4GB) — potential draft model
+- Qwen3-TTS 0.6B 4-bit (~1GB) — small draft model for ANE
+
+## Decision Tree Summary
+Phase 0: Benchmark ANE capabilities (maderix/ANE on M2 Max)
+Phase 1: Try Fish S2 Pro directly on ANE → if fast, ship it
+Phase 2: If not, speculative decode (Qwen draft on ANE + Fish verify on GPU)
+Phase 3: Polish, benchmark, package, release
+Phase 4: Fallback (quantization fix or pure GPU optimization)
+Every outcome produces something publishable. No wasted path.

@@ -709,3 +709,37 @@ CoreML alone doesn't solve it (0.80x still sub-realtime).
 ANE parallelism gets to ~1.08x (barely real-time).
 Quantization + parallelism gets to 1.41x (comfortably real-time).
 All three together is the contribution.
+
+---
+
+## Experiment 12: Real Token Rate + Corrected Projections
+*Date: 2026-03-18 ~10:30AM*
+
+### Real Token Count
+- **21.5 semantic tokens per second of audio** (NOT 100 as estimated)
+- Each semantic token produces 46.4ms of audio
+- Each token takes 67.5ms to generate → 0.69x RTF (matches baseline)
+
+### CORRECTED Projections
+
+| Configuration | ms/token | RTF |
+|--------------|----------|-----|
+| MLX baseline | 67.5 | 0.69x |
+| **CoreML GPU only** | **46.2** | **1.00x** |
+| CoreML + ANE (45% overlap) | 42.5 | 1.09x |
+| CoreML + ANE + 8-bit quant | 32.7 | 1.42x |
+| CoreML + ANE (70% overlap) + 8-bit | 24.2 | 1.92x |
+| CoreML + ANE (70% overlap) + 4-bit | 19.7 | 2.35x |
+
+### KEY FINDING
+**CoreML GPU-only may already achieve 1.0x RTF** without any ANE work.
+The 1.46x CoreML speedup over MLX × 0.69 baseline = 1.01x RTF.
+
+ANE parallelism and quantization push it further into comfortable real-time.
+But the base conversion to CoreML is the critical first step.
+
+### Revised Strategy
+1. Convert full Fish to CoreML → measure real RTF (may already be real-time)
+2. Add ANE parallelism → measure improvement
+3. Add quantization → measure final number
+4. Each step is independently valuable and measurable

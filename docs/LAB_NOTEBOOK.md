@@ -387,3 +387,46 @@ Per semantic token:
 3. Verify the fast AR on ANE produces CORRECT output (not just fast output)
 4. Measure real end-to-end RTF with the parallel implementation
 5. Benchmark audio quality (should be identical — same model, same weights)
+
+---
+
+## Experiment 7: Concurrent GPU + ANE Execution Test
+*Date: 2026-03-18 ~8AM*
+
+### Method
+Two CoreML models: large (GPU, 299M) + small (ANE, 100M).
+Ran sequentially, then concurrently via Python threads.
+
+### Results
+
+| Mode | Time |
+|------|------|
+| GPU alone | 2.46 ms |
+| ANE alone | 0.99 ms |
+| Sequential sum | 3.45 ms |
+| Parallel ideal | 2.46 ms |
+| **Concurrent actual** | **3.15 ms** |
+
+**Only 9% overlap via Python threading.** Mostly serializing.
+
+### Interpretation
+This is likely a Python/CoreML API limitation, NOT a hardware limitation.
+CoreML's predict() may hold the GIL or serialize through the runtime.
+The hardware (GPU + ANE) can run concurrently — Apple's own Mirror-SD paper
+proves this, and maderix/ANE demonstrates GPU↔ANE zero-copy pipelines.
+
+### The Fix
+Need to use one of:
+1. **Swift + GCD** — dispatch CoreML predictions on separate queues
+2. **Metal 4 MLTensor** — native GPU→ANE dispatch within Metal pipeline
+3. **maderix/ANE IOSurface** — proven GPU↔ANE concurrent execution
+
+### This Does NOT Kill the Approach
+The hardware supports concurrent execution. We just need the right API.
+Python CoreML is not it. Swift or Objective-C with direct dispatch is.
+
+### Decision
+| Date | Decision | Reasoning |
+|------|----------|-----------|
+| 2026-03-18 | Python CoreML concurrency doesn't work | 9% overlap via threading. Need native Swift/Metal dispatch. |
+| 2026-03-18 | Move to Swift implementation for parallel pipeline | Python was for prototyping. Production needs Swift anyway. |

@@ -150,3 +150,35 @@ Direct ANE inference of the full 5B model is NOT the path. Instead:
 | 2026-03-18 | Direct Fish on ANE is NOT viable | 0.47x estimated RTF vs 0.65x GPU. Per-call overhead dominates at seq=1. |
 | 2026-03-18 | Speculative decode is the path | ANE is fast at batch inference (seq=64: 3.27 TFLOPS). Draft model generates batches of candidates, GPU verifies. |
 | 2026-03-18 | Prefill acceleration also viable | Processing input prompts (batch, compute-bound) on ANE could help. |
+| 2026-03-18 | ANEMLL can't directly convert TTS models | ANEMLL converts text LLMs (LLaMA, Qwen). TTS models have codec decoder outputs, not text tokens. Need custom conversion or adapter layer. |
+| 2026-03-18 | GPU baseline confirmed at 0.69x RTF | Fish S2 Pro: 3.9s audio in 5.66s. Consistent with earlier measurements. |
+
+---
+
+## Experiment 2: ANEMLL Qwen TTS Conversion Attempt
+*Date: 2026-03-18 ~5:30AM*
+
+### Setup
+- Cloned ANEMLL, created Python 3.9 env, installed dependencies
+- coremltools 9.0, torch 2.5.0
+
+### Finding
+ANEMLL's `convert_model.sh` expects HuggingFace LLM architectures (LLaMA, Qwen text, Gemma).
+Qwen3-TTS 0.6B has a different output structure:
+- LLM: text tokens → vocab logits → softmax → next token
+- TTS: text tokens → audio codec tokens (10 codebooks × 4096 vocab each) → codec decoder → PCM audio
+
+The transformer blocks inside are the same (attention + FFN), but the embedding layer and output head are different. ANEMLL's pipeline hardcodes LLM assumptions (single vocab, text tokenizer, etc.).
+
+### Options
+1. **Fork ANEMLL and add TTS support** — modify conversion to handle codec outputs
+2. **Convert only the transformer blocks** — keep embedding + codec head on CPU/GPU
+3. **Use maderix/ANE directly** — bypass CoreML, hand-write MIL for Fish's transformer
+4. **Use CoreML directly** — trace the PyTorch model via torch.jit.trace → coremltools convert
+
+### Next Step
+Option 4 (CoreML direct conversion) is cleanest. Need to:
+- Export Fish S2 Pro's AR transformer to TorchScript via tracing
+- Convert to CoreML with coremltools
+- Set compute_units to .cpuAndNeuralEngine
+- Benchmark

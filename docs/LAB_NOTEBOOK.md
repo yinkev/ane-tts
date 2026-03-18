@@ -874,3 +874,45 @@ than cached, but still faster than MLX.
 3. V0.3: Add ANE pipeline parallelism — additional ~1.3x
 4. V0.4: Add selective quantization — additional ~1.7x
 Each version is independently shippable and measurable.
+
+---
+
+## ENGINEERING BREAKTHROUGH: ANEMLL Conversion Succeeds
+*Date: 2026-03-18 ~1PM*
+
+### The Fix
+Changed causal mask dimension in `qwen2_5_converter.py` line 616:
+- Before: `(1, 1, 1, self.context_length)` → mask shape [1,1,1,128]
+- After: `(1, 1, 1, state_length)` → mask shape [1,1,1,256]
+
+The attention needed a mask matching the KV cache length (256), not the context length (128).
+
+### Key Debug Insight
+- The shell script uses `qwen2_5_converter` for `model_type: "qwen2"` models
+- I was fixing `qwen_converter.py` (wrong file) initially
+- Fish head_dim=128 ≠ hidden_size/n_heads=80 (GQA with larger heads than standard)
+
+### Result
+4 CoreML chunks converted successfully:
+- fish_FFN_lut4_chunk_01of04.mlpackage: 435MB
+- fish_FFN_lut4_chunk_02of04.mlpackage: 435MB
+- fish_FFN_lut4_chunk_03of04.mlpackage: 435MB
+- fish_FFN_lut4_chunk_04of04.mlpackage: 435MB
+- Total: 1.74GB (4-bit LUT quantized, was 6.8GB BF16)
+
+### What This Means
+Fish S2 Pro's slow AR is now in CoreML format with:
+- KV cache support (ANEMLL manages state)
+- 4-bit LUT quantization (75% size reduction, ~2.5x memory speedup)
+- ANE-compatible Conv2d layers
+- Chunked for ANE memory constraints
+
+### Remaining Steps to Full Pipeline
+1. Convert embeddings (Step 1) — DONE (from earlier run)
+2. Convert LM head (Step 2) — DONE (from earlier run)
+3. Convert FFN/attention (Step 3) — JUST DONE ✅
+4. Convert prefill (Step 4) — next
+5. Combine chunks (Step 5)
+6. Compile (Step 6)
+7. Wire into Fish generation loop
+8. Measure end-to-end RTF

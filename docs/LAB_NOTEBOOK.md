@@ -518,3 +518,43 @@ dispatch (Metal 4 MLTensor, or maderix IOSurface), overlap could reach 70-80%.
 The hardware DOES support parallel execution. The 51% ceiling is a software
 limitation in CoreML's dispatch, not hardware. With more work on the dispatch
 mechanism, this approaches real-time.
+
+---
+
+## Experiment 9: Fish S2 Pro Parameter Map — Quantization Projections
+*Date: 2026-03-18 ~9AM*
+
+### Real Weight Distribution (from safetensors)
+
+| Component | Params | Size (BF16) | % |
+|-----------|--------|------------|---|
+| Slow AR (36 layers) | 3.63B | 6.8 GB | 80% |
+| Fast AR (4 layers) | 530M | 1.0 GB | 12% |
+| Embeddings | 399M | 761 MB | 9% |
+| Total | 4.56B | 8.5 GB | 100% |
+
+### Quantization Impact (slow AR only, rest stays BF16)
+
+| Bits | Total Size | Reduction | Memory Speedup |
+|------|-----------|-----------|----------------|
+| BF16 | 8.5 GB | — | 1.0x |
+| 8-bit | 5.1 GB | 40% | ~1.7x |
+| 6-bit | 4.3 GB | 50% | ~2.0x |
+| 4-bit | 3.4 GB | 60% | ~2.5x |
+
+### Combined Speedup Projections
+
+| Technique | Speedup | Combined RTF |
+|-----------|---------|-------------|
+| Baseline | 1.0x | 0.69x |
+| Pipeline parallelism (51% overlap) | 1.3x | 0.91x |
+| 8-bit quantization | 1.7x | 1.17x |
+| Pipeline + 8-bit | 2.2x | 1.53x |
+| Pipeline + 4-bit | 3.3x | 2.27x |
+| Pipeline + 4-bit + MLX optimization | 4.5x+ | 3.1x+ |
+
+### Next Steps
+1. Quantize slow AR to 8-bit (safest) → measure RTF + audio quality
+2. If quality holds, try 6-bit and 4-bit
+3. Combine best quantization with pipeline parallelism
+4. Target: 2x+ RTF with no audible quality loss

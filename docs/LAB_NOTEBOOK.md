@@ -476,3 +476,45 @@ architecture level rather than the model level.
 ### Status: INTERESTING IDEA, NEEDS MORE ANALYSIS
 Need to check if the slow AR's dependence on fast AR output is strict
 (accuracy depends on it) or loose (works okay with approximate values).
+
+---
+
+## Experiment 8: Swift GCD Concurrent GPU + ANE — 51% Overlap
+*Date: 2026-03-18 ~8:30AM*
+
+### Method
+Swift test with DispatchQueue for true parallel dispatch (not Python threads).
+GPU model on .cpuAndGPU, ANE model on .all. CoreML compileModel + GCD groups.
+
+### Results
+
+| Mode | ms/eval |
+|------|---------|
+| GPU alone | 2.317 |
+| ANE alone | 3.808 |
+| Sequential sum | 6.125 |
+| Parallel ideal | 3.808 |
+| **Concurrent actual** | **4.940** |
+| **Overlap** | **51%** |
+
+### Comparison: Python vs Swift
+
+| | Python threads | Swift GCD |
+|--|---------------|-----------|
+| Overlap | 9% | **51%** |
+
+### Fish S2 Pro Impact
+
+With 51% overlap:
+- Current: 66.7ms per semantic token
+- Parallel: 66.7 - (32ms × 0.51) = 50.4ms
+- **Speedup: 1.32x**
+- **RTF: 0.69 × 1.32 = 0.91x**
+
+Not quite real-time (1.0x), but a significant improvement. With better
+dispatch (Metal 4 MLTensor, or maderix IOSurface), overlap could reach 70-80%.
+
+### Status: PROMISING. Worth pursuing.
+The hardware DOES support parallel execution. The 51% ceiling is a software
+limitation in CoreML's dispatch, not hardware. With more work on the dispatch
+mechanism, this approaches real-time.

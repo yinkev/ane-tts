@@ -30,3 +30,9 @@
 - [MetalRT](https://huggingface.co/blog/runanywhere/metalrt-fastest-inference-apple-silicon) — Fast inference engine for Apple Silicon (March 2026)
 - M2 Max: 38-core GPU (13.6 TFLOPS), 16-core ANE (15.8 TOPS), 96GB unified memory (~400 GB/s)
 - [Apple Super Weight](https://machinelearning.apple.com/research/the-super-weight) — Preserving critical params at high precision enables aggressive quantization. Potential path for Fish mixed quantization (keep codec embeddings FP16, quantize transformer to 4-bit).
+
+## Apple Pipeline Optimization
+- [ChipChat](https://machinelearning.apple.com/research/chipchat) — Sub-second cascaded voice agent in MLX on Mac Studio. Streaming ASR→LLM→TTS with overlap. Directly relevant architecture.
+- [Parallel Track Transformers](https://machinelearning.apple.com/research/parallel-track) — 16x sync reduction for tensor parallelism. Insight: minimize cross-device dependencies.
+- [PolyNorm](https://machinelearning.apple.com/research/polynorm) — LLM-based text normalization for TTS. Preprocessing optimization.
+- [Apple Super Weight](https://machinelearning.apple.com/research/the-super-weight) — Critical params at high precision enables aggressive quantization elsewhere.

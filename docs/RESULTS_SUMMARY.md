@@ -1,39 +1,64 @@
 # ANE TTS Research Results — Complete Data
 
-*All values measured on M2 Max (96GB, macOS 26.4) between 2026-03-18 4AM-11:30AM.*
-*21 commits, 14 experiments. Every number from an actual benchmark run.*
+*All values measured on M2 Max (96GB, macOS 26.4). Research phase: 2026-03-18 4AM-11:30AM. Direct conversion: 2026-03-18.*
+*14 research experiments + direct CoreML conversion with full parity verification.*
 
 ---
 
-## CORRECTION (2026-03-18)
+## Direct CoreML Conversion — VERIFIED (2026-03-18)
 
-**All ANEMLL-specific benchmark numbers (45ms, 1.03x RTF, 192.7ms GPU-only, "4.3x ANE vs GPU") are INVALID.** They were measured on a broken model with three bugs:
+Built our own direct CoreML conversion (`src/convert_direct.py`), bypassing ANEMLL entirely. Faithful Fish architecture: QK norm, RoPE, GQA with correct `repeat_interleave`, SwiGLU, no bias. Loads 325 tensors directly from Fish safetensors.
 
-1. **embed_tokens.weight never loaded** — wrong key name in weight adapter
-2. **QK norm weights dropped** — 72 tensors silently missing
-3. **wqkv mapped to non-existent qkv_proj** — needed split into q/k/v_proj
+### Parity Verification
 
-The model was running on random/garbage weights for all ANEMLL benchmarks. These bugs are now fixed:
-- Weight loading verified correct: 398 tensors, all critical weights present
-- Embedding parity: exact match (max_err=0.0)
-- Single-layer parity: layers 0, 17, 35 all stages pass (max_err < 0.001)
-- Full-model one-step parity: 36 layers, hidden states match (max_err=0.000038, cos=1.0), logits match (max_err=0.000032), top-1 and top-5 tokens identical
+| Test | Result |
+|------|--------|
+| PyTorch vs Fish reference | cos=0.9999988 |
+| CoreML vs PyTorch | cos=0.9999988, top-5 identical |
+| Token generation | Real Fish semantic tokens (151K-155K range) |
 
-**Re-conversion and re-benchmarking required before any performance claims.**
+### Verified Benchmark Results (model: `/tmp/fish_slow_ar_direct.mlpackage`)
 
-### What is proven (valid, weight-independent measurements)
+| Compute Unit | ms/token |
+|-------------|----------|
+| **GPU (CPU_AND_GPU)** | **24.3** |
+| ANE+GPU (ALL) | 24.4 |
+| ANE only (CPU_AND_NE) | 174.1 |
 
-- Research phase experiments (0.2-14): pipeline profiling, CoreML vs MLX throughput comparisons, ANE hardware characterization, Swift GCD overlap -- these are timing measurements that do not depend on weight correctness
-- Parity of the corrected weight adapter (embedding, single-layer, full-model one-step)
+The model runs on GPU, not ANE. Unquantized fp16 does not benefit from ANE.
+
+### GQA Bug Discovery
+
+Phase 1 parity tests (ANEMLL path) had a GQA bug: `.repeat` vs `.repeat_interleave` for KV head expansion. Both sides of the test had the same bug, so parity tests passed — but neither matched Fish's actual GQA behavior. Fixed in the direct conversion.
+
+### What is PROVEN (verified with parity tests)
+
+- Slow AR: **24.3ms/token** on CoreML GPU — **1.43x faster than MLX** (34.7ms)
+- Slow AR RTF: 46.4ms audio / 24.3ms = **1.91x real-time** (slow AR stage only)
+- Research phase experiments (0.2-14): pipeline profiling, CoreML vs MLX throughput, ANE characterization, Swift GCD overlap — valid, weight-independent measurements
+- Direct CoreML conversion parity (cos=0.9999988, top-5 match)
+
+### What is ESTIMATED (from valid components, not measured end-to-end)
+
+- Full pipeline sequential: 24.3 + 32 = 56.3ms per token, 0.82x RTF
+- Full pipeline with parallelism: max(24.3, 32) = 32ms per token, 1.45x RTF
 
 ### What is NOT proven
 
-- KV-cache multi-step parity
-- CoreML export parity on corrected model
-- Performance of corrected ANEMLL model
+- KV cache integration
+- Full pipeline end-to-end RTF
 - Audio output quality
-- Any RTF claim on ANEMLL-converted model
-- Any "real-time" claim
+- Quantization impact
+
+---
+
+## CORRECTION: ANEMLL Path (2026-03-18)
+
+**ANEMLL approach abandoned.** FFN chunks produced structurally wrong output (cos=0.19 even without quantization). Root cause never fully isolated but likely in ANEMLL's tracing/compilation pipeline.
+
+**All ANEMLL-specific benchmark numbers (45ms, 1.03x RTF, 192.7ms GPU-only, "4.3x ANE vs GPU") remain INVALID.**
+
+Additionally, Phase 1 ANEMLL parity tests had a hidden GQA bug (`.repeat` vs `.repeat_interleave`). Both the reference and converted model had the same bug, so tests passed, but neither matched Fish's actual behavior.
 
 ---
 
@@ -96,15 +121,17 @@ Fish S2 Pro (4.56B total)
 
 **ANE L2 SRAM: ~50-70 MB. Peak throughput: 3.32 TFLOPS.**
 
-## CoreML vs MLX (Experiments 3, 11, 13)
+## CoreML vs MLX (Experiments 3, 11, 13 + Direct Conversion)
 
 | Model | CoreML GPU | CoreML ANE+GPU | MLX | CoreML Speedup |
 |-------|-----------|----------------|-----|----------------|
 | 1 transformer block | 1.31ms | — | 0.96ms | 0.74x (slower) |
-| **36 blocks (slow AR, real weights)** | **23.8ms** | **22.9ms** | **34.7ms** | **1.46x** |
+| 36 blocks (slow AR, proxy weights, Exp 13) | 23.8ms | 22.9ms | 34.7ms | 1.46x |
+| **36 blocks (slow AR, direct conversion, VERIFIED)** | **24.3ms** | **24.4ms** | **34.7ms** | **1.43x** |
 | 4 blocks (fast AR, real weights) | 3.44ms | 3.64ms | 3.2ms | 0.93x |
 
 *CoreML wins for large stacked models (graph-level optimization). MLX wins for single blocks.*
+*Direct conversion is the authoritative measurement — fully parity-verified (cos=0.9999988).*
 
 ## Fast AR on ANE (Experiments 6, 10)
 

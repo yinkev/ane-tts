@@ -95,7 +95,58 @@ The FFN weights are at 47.5 MB, right at the sweet spot where SRAM throughput pe
 3. **Fast AR (4 layers, 790 MB total)** — each layer streams through SRAM individually
 4. **The question is throughput:** at 2.95-3.3 TFLOPS for these sizes, is it faster than Metal GPU?
 
-### Next Steps
-- Experiment 1: Actually run a Fish layer on ANE via maderix/ANE framework
-- Measure: ms per layer on ANE vs ms per layer on Metal GPU
-- If ANE is faster per-layer → the full model could be faster overall
+---
+
+## Experiment 1: Fish S2 Pro Exact Matmul Dimensions on ANE
+*Date: 2026-03-18 ~5AM*
+*Tool: Custom benchmark (ane-tts/benchmarks/fish_ane_bench.m) using maderix/ANE API*
+
+### Results (seq_len=1, token generation mode)
+
+| Operation | Weight (MB) | ms/eval | TFLOPS |
+|-----------|------------|---------|--------|
+| Q proj (2560→4096) | 20.0 | 0.029 | 714 |
+| K proj (2560→1024) | 5.0 | 0.030 | 177 |
+| V proj (2560→1024) | 5.0 | 0.030 | 173 |
+| O proj (4096→2560) | 20.0 | 0.026 | 808 |
+| FFN gate (2560→9728) | 47.5 | 0.029 | 1692 |
+| FFN up (2560→9728) | 47.5 | 0.026 | 1917 |
+| FFN down (9728→2560) | 47.5 | 0.026 | 1899 |
+
+### Batch mode results
+
+| Operation | seq_len | ms/eval | TFLOPS |
+|-----------|---------|---------|--------|
+| Q proj | 16 | 0.510 | 658 |
+| FFN gate | 16 | 0.978 | 815 |
+| FFN gate | 64 | 0.976 | 3266 |
+
+### Analysis
+
+Per-layer matmul total at seq=1: **0.196 ms** — incredibly fast.
+36 layers × 0.196ms = **7.1 ms** per token (matmuls only).
+
+BUT: Real inference also needs attention, norms, embedding lookups, output projection, and per-layer overhead (context switching, memory transfers). Conservative 3x overhead estimate:
+
+- 36 layers × 0.59ms = 21.2ms per token
+- 300 tokens for 3s audio → 6.4s
+- **Estimated RTF: 0.47x — SLOWER than GPU baseline (0.65x)**
+
+### KEY FINDING: Direct Fish on ANE will NOT be faster than GPU.
+
+At seq=1 (token generation), the matmuls are tiny and ANE per-call overhead dominates. The ANE excels at batch operations (seq=64: 3.27 TFLOPS) but token-by-token generation is overhead-bound, not compute-bound.
+
+### Revised Strategy
+
+Direct ANE inference of the full 5B model is NOT the path. Instead:
+1. **Speculative decode**: Small draft model on ANE (batch inference, ANE's strength) → Fish verifies on GPU
+2. **Prefill on ANE**: Process the input prompt on ANE (batch, compute-bound) → decode on GPU
+3. **The SqueezeBits approach** (NPU prefill + GPU decode) is validated by this data
+
+### Decision Log Update
+
+| Date | Decision | Reasoning |
+|------|----------|-----------|
+| 2026-03-18 | Direct Fish on ANE is NOT viable | 0.47x estimated RTF vs 0.65x GPU. Per-call overhead dominates at seq=1. |
+| 2026-03-18 | Speculative decode is the path | ANE is fast at batch inference (seq=64: 3.27 TFLOPS). Draft model generates batches of candidates, GPU verifies. |
+| 2026-03-18 | Prefill acceleration also viable | Processing input prompts (batch, compute-bound) on ANE could help. |

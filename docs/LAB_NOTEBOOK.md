@@ -182,3 +182,39 @@ Option 4 (CoreML direct conversion) is cleanest. Need to:
 - Convert to CoreML with coremltools
 - Set compute_units to .cpuAndNeuralEngine
 - Benchmark
+
+---
+
+## CRITICAL FINDING: Fish S2 SGLang Engine + Qwen3-TTS CoreML
+
+*Date: 2026-03-18 ~6AM*
+
+### Discovery 1: Fish S2's SGLang engine achieves 0.195 RTF
+Fish Audio's own production inference engine (SGLang-based) runs at 0.195 RTF on NVIDIA.
+That's 5x faster than our mlx-audio implementation (0.69x RTF).
+Someone already ported SGLang to macOS with 5x speedup via native MLX.
+**This means the bottleneck might be mlx-audio, not the model or hardware.**
+
+Source: https://fish.audio/blog/fish-audio-open-sources-s2/
+SGLang on macOS: https://gist.github.com/yeahdongcn/161f0718d55c7022791261e6d6a0b57d
+
+### Discovery 2: Qwen3-TTS CoreML already exists
+`alexwengg/qwen3-tts-coreml` on HuggingFace — someone already converted Qwen3-TTS to CoreML.
+Could be our ANE draft model, ready to download.
+
+### Revised Strategy Options
+
+| Path | Effort | Expected RTF | Novelty |
+|------|--------|-------------|---------|
+| A: SGLang on Mac for Fish S2 | Low (use existing code) | 0.3-0.5x? | Low (engineering only) |
+| B: ANE draft + GPU verify (spec decode) | High | >1.0x | High (novel for TTS) |
+| C: Qwen3-TTS CoreML on ANE as draft | Medium | >1.0x | Medium |
+| D: Fix mlx-audio Fish implementation | Medium | 0.9-1.2x? | Low |
+
+**Path A might solve the speed problem without any ANE work at all.**
+If SGLang on Mac gets Fish to 0.3x RTF (super-realtime), we don't need ANE.
+But Path B/C is the publishable contribution.
+
+### Decision Needed
+Try Path A first (lowest effort, highest chance of immediate result)?
+Or go straight to Path B/C (harder but publishable)?

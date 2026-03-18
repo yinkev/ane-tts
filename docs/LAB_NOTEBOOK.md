@@ -430,3 +430,49 @@ Python CoreML is not it. Swift or Objective-C with direct dispatch is.
 |------|----------|-----------|
 | 2026-03-18 | Python CoreML concurrency doesn't work | 9% overlap via threading. Need native Swift/Metal dispatch. |
 | 2026-03-18 | Move to Swift implementation for parallel pipeline | Python was for prototyping. Production needs Swift anyway. |
+
+---
+
+## Insight: Batched Pipeline Instead of Per-Token Ping-Pong
+*Date: 2026-03-18 ~8:15AM*
+*Inspired by: Apple's Parallel Track Transformers (reducing sync overhead)*
+
+### The Problem
+Per-token GPU↔ANE dispatch serializes because of API overhead per call.
+Our concurrency test showed 91% serialization through Python CoreML.
+
+### The Solution: Batch the Pipeline
+
+Instead of:
+```
+For each token:
+  slow AR (GPU) → fast AR (GPU or ANE) → next token
+```
+
+Do:
+```
+Phase 1: GPU generates N semantic tokens (slow AR only, no fast AR)
+Phase 2: ANE processes all N tokens through fast AR in one batch
+Phase 3: While ANE does Phase 2, GPU starts Phase 1 for next N tokens
+```
+
+### Why This Works
+1. Fast AR at batch=8: 1.78ms (barely more than single: 1.46ms) — batching is nearly free
+2. One ANE dispatch per batch, not per token — amortizes the API overhead
+3. GPU and ANE only synchronize every N tokens, not every token
+4. The fast AR's 10 codebook steps per token can be batched across tokens too
+
+### The Question
+Does Fish S2 Pro's architecture allow generating multiple semantic tokens
+before running the fast AR? Looking at the code (line 585-590), each slow AR
+step feeds the PREVIOUS token's full codebooks back as input. So you CAN'T
+skip the fast AR — the slow AR needs its output for the next step.
+
+BUT: you could run the slow AR speculatively (predict what the fast AR would
+produce based on just the semantic token, without actually running it) and
+correct later. This is basically speculative decoding again, but at the
+architecture level rather than the model level.
+
+### Status: INTERESTING IDEA, NEEDS MORE ANALYSIS
+Need to check if the slow AR's dependence on fast AR output is strict
+(accuracy depends on it) or loose (works okay with approximate values).

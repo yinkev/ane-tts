@@ -29,3 +29,4 @@
 ## Apple Silicon
 - [MetalRT](https://huggingface.co/blog/runanywhere/metalrt-fastest-inference-apple-silicon) — Fast inference engine for Apple Silicon (March 2026)
 - M2 Max: 38-core GPU (13.6 TFLOPS), 16-core ANE (15.8 TOPS), 96GB unified memory (~400 GB/s)
+- [Apple Super Weight](https://machinelearning.apple.com/research/the-super-weight) — Preserving critical params at high precision enables aggressive quantization. Potential path for Fish mixed quantization (keep codec embeddings FP16, quantize transformer to 4-bit).

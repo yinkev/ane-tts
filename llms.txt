@@ -1,26 +1,34 @@
 # ane-tts
 
-> Real-time text-to-speech on Apple Silicon by leveraging the Neural Engine. Makes 5B TTS models (Fish S2 Pro) run at real-time speed on consumer Macs.
+> Accelerating TTS inference on Apple Silicon by leveraging the Neural Engine. Targeting Fish S2 Pro (5B) on consumer Macs.
 
 ## Problem
-Fish S2 Pro (5B params, best open-source TTS) runs at 0.65x RTF on Metal GPU. Sub-realtime = unusable for conversation. The ANE (15.8 TOPS) sits idle during inference.
+Fish S2 Pro (5B params, best open-source TTS) runs at 0.69x RTF on Metal GPU via MLX. Sub-realtime. The ANE (15.8 TOPS) sits idle during inference.
 
 ## Approach
-Two backends: direct ANE access (maderix/ANE, biggest speedup) and CoreML (stable, for everyone).
-If direct inference isn't enough: speculative TTS decoding — small draft model on ANE, big model verifies on GPU.
+Two backends: direct ANE access (maderix/ANE) and CoreML (stable, for everyone).
+Pipeline parallelism: slow AR on GPU + fast AR on ANE concurrently.
+ANEMLL for ANE-optimized CoreML conversion with KV cache.
 
 ## Status
 Research phase COMPLETE (14 experiments on M2 Max). Engineering phase ACTIVE.
 
-ANEMLL conversion of Fish S2 Pro's slow AR (3.63B) to ANE-optimized CoreML is COMPLETE:
-- All 7 steps done: embeddings, LM head (6-bit), FFN decode (4-bit x4), prefill (4-bit x4), combine, compile, meta.yaml
-- 6 compiled .mlmodelc files at /tmp/fish_slow_ar_anemll/ (~3.5GB total, down from 6.8GB BF16)
-- Initial benchmark: embeddings 0.6ms, LM head 5.4ms on ANE+GPU. FFN chunks load OK.
+### What is proven
+- Research-phase timing data (Experiments 0.2-14): pipeline profiling, CoreML vs MLX throughput, ANE characterization, Swift GCD overlap — valid, weight-independent measurements
+- CoreML direct conversion (no KV cache): 0.84x RTF measured (Experiment 14)
 - CoreML is 1.46x faster than MLX for slow AR (23.8ms vs 34.7ms per token)
 - Swift GCD gives 45-51% GPU+ANE overlap for pipeline parallelism
-- Next: wire into Fish's generation loop, full KV-cache benchmark, end-to-end RTF
+- Weight adapter correctness: 398 tensors verified, embedding parity (max_err=0.0), single-layer parity (max_err < 0.001), full-model one-step parity (max_err=0.000038, top-1/top-5 match)
 
-Decision tree at docs/DECISION_TREE.md. Lab notebook at docs/LAB_NOTEBOOK.md.
+### What is NOT proven (pending re-conversion and re-benchmark)
+- KV-cache multi-step parity
+- ANEMLL-converted model performance (previous benchmarks INVALID — ran on broken weights)
+- Audio output quality
+- Any RTF claim beyond the 0.84x CoreML-direct measurement
+- Previous "45ms" and "1.03x RTF" numbers are INVALID
+
+### ANEMLL conversion
+Previous conversion completed structurally but used a broken weight adapter (3 bugs: missing embeddings, dropped QK norms, broken QKV split). Re-conversion required on corrected weights.
 
 ## Key Tools
 - maderix/ANE (github.com/maderix/ANE) — direct ANE access, 6.2K stars
@@ -33,10 +41,4 @@ Decision tree at docs/DECISION_TREE.md. Lab notebook at docs/LAB_NOTEBOOK.md.
 - Qwen3-TTS 1.7B BF16 (~4GB) — potential draft model
 - Qwen3-TTS 0.6B 4-bit (~1GB) — small draft model for ANE
 
-## Decision Tree Summary
-Phase 0: Benchmark ANE capabilities (maderix/ANE on M2 Max)
-Phase 1: Try Fish S2 Pro directly on ANE → if fast, ship it
-Phase 2: If not, speculative decode (Qwen draft on ANE + Fish verify on GPU)
-Phase 3: Polish, benchmark, package, release
-Phase 4: Fallback (quantization fix or pure GPU optimization)
-Every outcome produces something publishable. No wasted path.
+Decision tree at docs/DECISION_TREE.md. Lab notebook at docs/LAB_NOTEBOOK.md.

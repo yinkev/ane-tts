@@ -1,18 +1,18 @@
 # ane-tts
 
-Real-time text-to-speech on Apple Silicon by leveraging the Neural Engine.
+Accelerating TTS inference on Apple Silicon by leveraging the Neural Engine.
 
-> **Status:** Research complete (14 experiments). Engineering phase active — ANEMLL conversion in progress.
+> **Status:** Research complete (14 experiments). Engineering phase active — weight adapter corrected, ANEMLL re-conversion pending.
 
 ## The Problem
 
-Large TTS models (Fish Audio S2 Pro, 5B params) produce the best speech quality but run at 0.65x real-time factor (RTF) on Apple Silicon's Metal GPU. This makes them unusable for real-time applications like voice assistants, live translation, or conversational AI.
+Large TTS models (Fish Audio S2 Pro, 5B params) produce the best speech quality but run at 0.69x real-time factor (RTF) on Apple Silicon's Metal GPU via MLX. This makes them unusable for real-time applications like voice assistants, live translation, or conversational AI.
 
 The Apple Neural Engine (ANE) — 15.8 TOPS on M2 Max — sits completely idle during TTS inference.
 
 ## The Goal
 
-Make Fish S2 Pro run at real-time speed (>1.0x RTF) on consumer Apple Silicon by using the Neural Engine.
+Accelerate Fish S2 Pro inference on consumer Apple Silicon using the Neural Engine.
 
 ## Approach
 
@@ -25,19 +25,27 @@ Two backends, one tool:
 
 ## Current Results
 
-*14 experiments on M2 Max (96GB). All numbers from real benchmark runs.*
+*14 experiments on M2 Max (96GB). Research-phase numbers from real benchmark runs.*
+
+### Proven (measured)
 
 | Configuration | ms/token | RTF | vs MLX baseline |
 |--------------|----------|-----|-----------------|
 | MLX (current) | 67.5 | 0.69x | baseline |
-| CoreML GPU (measured) | 55.4 | 0.84x | 1.22x faster |
-| + Swift GCD parallelism (est.) | ~37.9 | ~1.22x | ~1.78x faster |
-| + 8-bit slow AR quant (est.) | ~31.4 | ~1.48x | ~2.14x faster |
-| + 70% overlap + 4-bit (est.) | ~19.7 | ~2.35x | ~3.41x faster |
+| CoreML GPU no-KV (measured) | 55.4 | 0.84x | 1.22x faster |
 
-Key finding: CoreML is 1.46x faster than MLX for slow AR (23.8ms vs 34.7ms). Swift GCD achieves 45-51% GPU+ANE overlap.
+CoreML is 1.46x faster than MLX for slow AR (23.8ms vs 34.7ms). Swift GCD achieves 45-51% GPU+ANE overlap.
 
-ANEMLL conversion in progress: FFN/Decode chunks converted (4x 435MB, 4-bit LUT, KV cache). Remaining steps executing.
+### Estimated (from valid research-phase components)
+
+| Configuration | ms/token | RTF | Notes |
+|--------------|----------|-----|-------|
+| + Swift GCD parallelism | ~37.9 | ~1.22x | From measured 45% overlap |
+| + 8-bit slow AR quant | ~31.4 | ~1.48x | Projected |
+
+### Not yet proven
+
+ANEMLL conversion with KV cache is the expected path to best performance, but the previous conversion had a broken weight adapter (3 bugs: missing embeddings, dropped QK norms, broken QKV split). The adapter is now fixed and verified (398 tensors, full-model parity confirmed). Re-conversion and re-benchmarking are pending.
 
 ## Hardware Requirements
 
@@ -50,6 +58,7 @@ ANEMLL conversion in progress: FFN/Decode chunks converted (4x 435MB, 4-bit LUT,
 See `docs/` for:
 - `DECISION_TREE.md` — Full execution plan with branching logic
 - `LAB_NOTEBOOK.md` — Experiment log (reproducible)
+- `RESULTS_SUMMARY.md` — All measurements and data
 - `REFERENCES.md` — All papers and prior work
 
 ## Prior Art

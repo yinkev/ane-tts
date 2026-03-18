@@ -1020,3 +1020,45 @@ FFN chunks (the heavy transformer layers) require KV cache state management for 
 4. Audio quality verification vs MLX baseline
 5. End-to-end RTF measurement
 5. Measure end-to-end RTF with real audio generation
+
+---
+
+## CORRECTION: Weight Adapter Had 3 Critical Bugs — All ANEMLL Benchmarks Invalid
+*Date: 2026-03-18*
+
+### Discovery
+
+Post-conversion parity testing revealed the ANEMLL weight adapter (Fish -> Qwen format) had three bugs that caused the converted model to run on random/garbage weights:
+
+1. **embed_tokens.weight never loaded** — the adapter used an incorrect key name, so the embedding table was never mapped. The model received random embeddings for every token.
+2. **QK norm weights dropped** — 72 tensors (q_norm and k_norm for all 36 layers, 2 tensors each) were silently dropped during conversion. These normalize Q and K after projection and before RoPE. Without them, attention scores were computed on unnormalized projections.
+3. **wqkv mapped to non-existent qkv_proj** — Fish uses a fused QKV weight. The adapter mapped it to a single `qkv_proj` key that doesn't exist in Qwen's format. The fix splits it into separate `q_proj`, `k_proj`, `v_proj` weights with correct dimension slicing.
+
+### Impact
+
+All ANEMLL-phase benchmarks (Step 8 and any derived numbers) measured inference on a model with wrong embeddings, missing normalization, and broken attention projections. The 45ms/token, 1.03x RTF, 192.7ms GPU-only, and "ANE is 4.3x faster than GPU" claims are all meaningless.
+
+The research-phase measurements (Experiments 0.2-14) are NOT affected — those used direct CoreML tracing of PyTorch models with real weights loaded directly from safetensors, bypassing the weight adapter entirely.
+
+### Fixes Applied
+
+All three bugs fixed in the weight adapter. Verified correct with:
+- **398 tensors** loaded (was missing 72+ before)
+- **Embedding parity**: exact match, max_err=0.0
+- **Single-layer parity**: tested layers 0, 17, 35. All stages pass: LayerNorm, Q/K/V projection, QK norm, attention, O projection, residual connection, FFN, layer output. Max error < 0.001 at every stage.
+- **Full-model one-step parity** (36 layers): hidden states match (max_err=0.000038, cosine similarity=1.0), logits match (max_err=0.000032), top-1 and top-5 predicted tokens identical between reference and converted model.
+- **QKV split order verified** correct (Q, K, V in that order from fused weight)
+- **QK norm placement verified** correct (after projection, before RoPE)
+
+### What's Next
+
+1. KV-cache multi-step parity test (verify cache accumulation is correct across multiple generation steps)
+2. Re-conversion through ANEMLL pipeline with corrected weights
+3. Re-benchmark on corrected model
+4. Only then: performance claims
+
+### Lessons
+
+- Always run parity tests before benchmarking. Speed on garbage weights is meaningless.
+- Silent tensor drops are insidious — the model runs fine, just wrong. Verify tensor counts.
+- Fused weight splitting (QKV) requires careful dimension verification against the reference model.

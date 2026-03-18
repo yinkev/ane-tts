@@ -5,6 +5,38 @@
 
 ---
 
+## CORRECTION (2026-03-18)
+
+**All ANEMLL-specific benchmark numbers (45ms, 1.03x RTF, 192.7ms GPU-only, "4.3x ANE vs GPU") are INVALID.** They were measured on a broken model with three bugs:
+
+1. **embed_tokens.weight never loaded** — wrong key name in weight adapter
+2. **QK norm weights dropped** — 72 tensors silently missing
+3. **wqkv mapped to non-existent qkv_proj** — needed split into q/k/v_proj
+
+The model was running on random/garbage weights for all ANEMLL benchmarks. These bugs are now fixed:
+- Weight loading verified correct: 398 tensors, all critical weights present
+- Embedding parity: exact match (max_err=0.0)
+- Single-layer parity: layers 0, 17, 35 all stages pass (max_err < 0.001)
+- Full-model one-step parity: 36 layers, hidden states match (max_err=0.000038, cos=1.0), logits match (max_err=0.000032), top-1 and top-5 tokens identical
+
+**Re-conversion and re-benchmarking required before any performance claims.**
+
+### What is proven (valid, weight-independent measurements)
+
+- Research phase experiments (0.2-14): pipeline profiling, CoreML vs MLX throughput comparisons, ANE hardware characterization, Swift GCD overlap -- these are timing measurements that do not depend on weight correctness
+- Parity of the corrected weight adapter (embedding, single-layer, full-model one-step)
+
+### What is NOT proven
+
+- KV-cache multi-step parity
+- CoreML export parity on corrected model
+- Performance of corrected ANEMLL model
+- Audio output quality
+- Any RTF claim on ANEMLL-converted model
+- Any "real-time" claim
+
+---
+
 ## Fish S2 Pro Architecture
 
 ```
@@ -101,46 +133,45 @@ Fish S2 Pro (4.56B total)
 
 ## End-to-End Pipeline Results
 
-### Measured (Experiment 14 + ANEMLL benchmark)
+### Measured (Experiment 14 — CoreML direct conversion, no ANEMLL)
 
 | Configuration | ms/token | RTF | vs MLX |
 |--------------|----------|-----|--------|
 | **MLX (current)** | **67.5** | **0.69x** | **baseline** |
 | CoreML GPU no-KV (measured) | 55.4 | 0.84x | 1.22x |
-| **ANEMLL 4-bit KV cache on ANE (measured)** | **45.0** | **1.03x** | **1.50x** |
-| GPU-only with KV cache (measured) | 192.7 | 0.24x | 0.35x |
 
-### With Pipeline Parallelism (estimated from measured components)
+### INVALID — ANEMLL Benchmarks (measured on broken model, DO NOT CITE)
 
-| Configuration | Slow AR | Fast AR | Overlap | Effective | RTF |
-|--------------|---------|---------|---------|-----------|-----|
-| ANEMLL sequential | 45ms | 32ms | 0% | 77ms | 0.60x |
-| **ANEMLL + 100% overlap** | **45ms ANE** | **32ms GPU** | **100%** | **45ms** | **1.03x** |
-| + Swift (no Python overhead) | ~41ms | 32ms | 100% | ~41ms | ~1.13x |
-| + 2 chunks (less overhead) | ~37ms | 32ms | 100% | ~37ms | ~1.25x |
+~~The following numbers were measured on a model with 3 weight-loading bugs (missing embeddings, dropped QK norms, broken QKV mapping). They represent inference on random/garbage data and are meaningless:~~
+
+| ~~Configuration~~ | ~~ms/token~~ | ~~RTF~~ | ~~Status~~ |
+|---|---|---|---|
+| ~~ANEMLL 4-bit KV cache on ANE~~ | ~~45.0~~ | ~~1.03x~~ | **INVALID** |
+| ~~GPU-only with KV cache~~ | ~~192.7~~ | ~~0.24x~~ | **INVALID** |
+| ~~ANE is 4.3x faster than GPU~~ | — | — | **INVALID** |
+
+All ANEMLL pipeline parallelism estimates derived from these numbers are also invalid. Re-benchmarking on the corrected model is required.
+
+### Estimated with Pipeline Parallelism (from valid research-phase data)
+
+These estimates use only the valid CoreML direct-conversion measurements (Experiment 14):
+
+| Configuration | ms/token | RTF | Notes |
+|--------------|----------|-----|-------|
+| CoreML sequential (measured) | 55.4 | 0.84x | Experiment 14 |
+| + Swift GCD 45% overlap (est.) | ~37.9 | ~1.22x | From Experiments 8, 10 |
+| + 8-bit slow AR quant (est.) | ~31.4 | ~1.48x | Projected |
 
 ```
 RTF Scale:
 0.0x     0.5x     1.0x      1.5x      2.0x
-│         │         │          │          │
-│████████████████░░░│          │          │  MLX baseline: 0.69x
-│█████████████████████████░░░░░│          │  CoreML GPU (no KV): 0.84x
-│████████████████████████████████████████░│          │  ANEMLL ANE 4-bit (MEASURED): 1.03x
-│███████████████████████████████████████████████░░░░░│  + Swift optimized: ~1.25x
-                              ▲
+|         |         |          |          |
+|================------|          |          |  MLX baseline: 0.69x
+|=========================--------|          |  CoreML GPU (no KV, measured): 0.84x
+|                         ????????|          |  ANEMLL corrected: UNKNOWN (pending re-benchmark)
+                              ^
                           REAL-TIME
 ```
-
-### Key Finding: ANE is 4.3x Faster Than GPU for 4-bit Quantized Model
-
-| Compute Unit | FFN ms | LM Head ms | Total ms | RTF |
-|-------------|--------|------------|----------|-----|
-| ANE+GPU (ALL) | 39.2 | 5.8 | 45.0 | 1.03x |
-| ANE-only (CPU_AND_NE) | 39.5 | 5.9 | 45.3 | 1.02x |
-| GPU-only (CPU_AND_GPU) | 187.1 | 5.6 | 192.7 | 0.24x |
-
-The model runs **entirely on ANE** when available. GPU contributes nothing.
-ANE is 4.3x faster than GPU for 4-bit LUT quantized transformer inference with KV cache.
 
 ## Weight Distribution
 
@@ -166,11 +197,11 @@ After 4-bit slow AR quantization:
 |----------|----------|-----|-----------|
 | Fish SGLang (official) | NVIDIA A100/H100 | 0.195x (5.1x RT) | Linux only |
 | baicai1145 W4A16 GPTQ | NVIDIA | ~0.195x | Linux only |
-| mlx-audio BF16 | Mac (MLX) | 0.69x | ✅ Current |
-| **ane-tts CoreML (ours)** | **Mac (CoreML)** | **0.84x measured** | **In progress** |
-| **ane-tts full stack (ours)** | **Mac (CoreML+ANE)** | **~1.5-2.4x est.** | **Planned** |
+| mlx-audio BF16 | Mac (MLX) | 0.69x | Current |
+| ane-tts CoreML no-KV (ours) | Mac (CoreML) | 0.84x measured | In progress |
+| ane-tts ANEMLL (ours) | Mac (CoreML+ANE) | UNKNOWN | Pending re-benchmark on corrected model |
 
-**Gap we fill: No real-time Fish S2 Pro on Mac exists. We're building it.**
+**Gap: No accelerated Fish S2 Pro on Mac beyond MLX. ANEMLL performance pending re-benchmark.**
 
 ## What's Been Created
 
@@ -189,7 +220,7 @@ After 4-bit slow AR quantization:
 
 ## ANEMLL Conversion Progress (Engineering Phase)
 
-Research phase complete. ANEMLL conversion of Fish S2 Pro's slow AR to ANE-optimized CoreML is DONE.
+Research phase complete. ANEMLL conversion pipeline ran to completion, but the weight adapter had 3 critical bugs (see CORRECTION section above). The converted model was running on garbage weights. Re-conversion on the corrected weight adapter is required.
 
 ### Bugs Fixed in ANEMLL
 
@@ -212,25 +243,26 @@ Research phase complete. ANEMLL conversion of Fish S2 Pro's slow AR to ANE-optim
 
 ### Pipeline Status
 
-| Step | Status |
-|------|--------|
-| Step 1 (Embeddings) | DONE |
-| Step 2 (LM Head) | DONE (6-bit LUT) |
-| Step 3 (FFN/Decode) | DONE (4-bit LUT, 4 chunks) |
-| Step 4 (Prefill) | DONE (4-bit LUT, 4 chunks, after 3 bug fixes) |
-| Step 5 (Combine) | DONE (FFN + Prefill merged, weight dedup) |
-| Step 6 (Compile) | DONE (6 .mlmodelc files) |
-| Step 7 (Meta.yaml) | DONE |
-| Step 8 (Benchmark) | DONE (embeddings 0.6ms, LM head 5.4ms, FFN chunks load OK) |
+Previous conversion ran on broken weight adapter. Steps completed structurally but need re-run:
 
-### Initial Benchmark (Embeddings + LM Head only)
+| Step | Previous Status | Current Status |
+|------|----------------|----------------|
+| Step 1 (Embeddings) | Ran | NEEDS RE-CONVERSION (weight adapter fixed) |
+| Step 2 (LM Head) | Ran | NEEDS RE-CONVERSION |
+| Step 3 (FFN/Decode) | Ran | NEEDS RE-CONVERSION |
+| Step 4 (Prefill) | Ran | NEEDS RE-CONVERSION |
+| Step 5 (Combine) | Ran | NEEDS RE-RUN |
+| Step 6 (Compile) | Ran | NEEDS RE-RUN |
+| Step 7 (Meta.yaml) | Ran | NEEDS RE-RUN |
+| Step 8 (Benchmark) | Ran (invalid data) | NEEDS RE-BENCHMARK |
 
-| Component | GPU | ANE+GPU |
-|-----------|-----|---------|
-| Embeddings | 0.59 ms | 0.66 ms |
-| LM Head (6-bit) | 5.92 ms | 5.36 ms |
-| Total overhead | 6.51 ms | 6.02 ms |
+### Initial Benchmark (Embeddings + LM Head only) — INVALID
 
-*FFN chunks require KV cache state management for full inference loop — next step.*
+These were measured on the broken model (garbage weights). Timing may or may not be representative since model structure was correct even if weights were wrong, but treat as unverified:
 
-*Engineering phase: conversion complete, benchmark and integration pending.*
+| Component | GPU | ANE+GPU | Status |
+|-----------|-----|---------|--------|
+| Embeddings | 0.59 ms | 0.66 ms | UNVERIFIED |
+| LM Head (6-bit) | 5.92 ms | 5.36 ms | UNVERIFIED |
+
+*Engineering phase: re-conversion on corrected weights required before any benchmark claims.*

@@ -777,3 +777,39 @@ With 21.5 tokens/s audio rate and 46.4ms audio per token:
 CoreML conversion of the full slow AR: DONE. Real weights, correct output.
 This is the first major deliverable — a CoreML version of Fish's slow AR
 that runs 1.46-1.51x faster than MLX on the same GPU.
+
+---
+
+## Experiment 14: Full Real Pipeline — CoreML Sequential + Concurrent
+*Date: 2026-03-18 ~11:30AM*
+
+### Results (REAL Fish weights, both models on CoreML)
+
+| Mode | ms/token | RTF | vs MLX |
+|------|----------|-----|--------|
+| MLX baseline | 67.5 | 0.69x | 1.0x |
+| **CoreML sequential** | **55.4** | **0.84x** | **1.22x** |
+| CoreML concurrent (Python) | 58.6 | 0.79x | 1.15x |
+
+Python threading concurrent is worse than sequential (negative overlap).
+This confirms: Python cannot dispatch CoreML models in parallel.
+Swift GCD (45-51% from exp 8) is needed for real parallelism.
+
+### Estimated with Swift GCD (45% overlap)
+CoreML sequential: 55.4ms
+With 45% overlap on fast AR (31.8ms × 0.55 = 17.5ms saved): 55.4 - 17.5 = 37.9ms
+**Estimated: 37.9ms → 1.22x RTF**
+
+### Estimated with quantization on top
+8-bit slow AR: 23.6/1.7 = 13.9ms + 31.8ms × 0.55 = 31.4ms
+**Estimated: 31.4ms → 1.48x RTF**
+
+### Summary of all 14 experiments
+Total commits: 20
+Total real measurements: 14 experiments
+Key deliverables created:
+- Real Fish slow AR CoreML model (3.63B params, /tmp/fish_slow_ar_real.mlpackage)
+- Real Fish fast AR CoreML model (414M params, /tmp/fish_real_fast_ar.mlpackage)
+- ANE benchmark suite (maderix/ANE on M2 Max)
+- Swift concurrent dispatch test
+- Full profiling data for Fish S2 Pro pipeline

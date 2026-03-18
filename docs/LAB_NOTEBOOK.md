@@ -558,3 +558,59 @@ mechanism, this approaches real-time.
 2. If quality holds, try 6-bit and 4-bit
 3. Combine best quantization with pipeline parallelism
 4. Target: 2x+ RTF with no audible quality loss
+
+---
+
+## Experiment 10: REAL Fish S2 Pro Fast AR Weights on CoreML + Concurrent Swift
+*Date: 2026-03-18 ~9:30AM*
+
+### Method
+Extracted actual Fish S2 Pro audio_decoder (fast AR) weights from safetensors.
+Built PyTorch model matching exact architecture. Loaded real weights.
+Converted to CoreML. Benchmarked GPU and ANE. Ran Swift GCD concurrent test.
+
+### Weight Extraction
+- 30 tensors extracted from audio_decoder
+- 414M params, all compatible shapes (no (N,8) problem in fast AR)
+- Largest weight: codebook_embeddings [40960, 2560] — not used in forward pass
+
+### CoreML Benchmark (real weights, seq_len=1)
+
+| Compute | ms/eval |
+|---------|---------|
+| GPU | 3.437 |
+| ANE+GPU | 3.643 |
+
+### Swift GCD Concurrent (real weights)
+
+| Mode | ms/eval |
+|------|---------|
+| GPU proxy alone | 2.436 |
+| ANE (real fast AR) alone | 3.293 |
+| Sequential sum | 5.729 |
+| Concurrent actual | 4.640 |
+| **Overlap** | **45%** |
+
+### Conclusion
+Real Fish weights confirm the proxy model results:
+- Fast AR runs at GPU-equivalent speed on ANE (3.4-3.6ms)
+- 45% overlap via Swift GCD (consistent with 51% on proxy)
+- The technique works with actual production model weights
+
+### What's Been Proven (Full Summary)
+
+| Finding | Experiment | Status |
+|---------|-----------|--------|
+| 96% bottleneck is AR transformer | Exp 4 | ✅ Proven |
+| 53% slow AR + 47% fast AR split | Exp 5 | ✅ Proven |
+| Fast AR runs on ANE at GPU speed | Exp 6, 10 | ✅ Proven (real weights) |
+| GPU + ANE overlap via Swift GCD | Exp 8, 10 | ✅ 45-51% overlap |
+| Direct Fish on ANE = slower | Exp 1, 3 | ✅ Confirmed |
+| ANE SRAM ~50-70MB, dim=4096 works | Exp 0.2 | ✅ Confirmed |
+
+### What Remains to Build
+1. Wire into actual Fish generation loop (replace sequential fast AR calls with ANE dispatch)
+2. Improve overlap beyond 45% (Metal 4 / IOSurface / maderix API)
+3. Verify audio quality (ANE output must match GPU output)
+4. End-to-end RTF measurement
+5. Package + benchmark + ship

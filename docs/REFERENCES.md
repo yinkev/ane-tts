@@ -36,3 +36,8 @@
 - [Parallel Track Transformers](https://machinelearning.apple.com/research/parallel-track) — 16x sync reduction for tensor parallelism. Insight: minimize cross-device dependencies.
 - [PolyNorm](https://machinelearning.apple.com/research/polynorm) — LLM-based text normalization for TTS. Preprocessing optimization.
 - [Apple Super Weight](https://machinelearning.apple.com/research/the-super-weight) — Critical params at high precision enables aggressive quantization elsewhere.
+
+## Prior Quantization Work
+- [baicai1145/s2-pro-w4a16](https://huggingface.co/baicai1145/s2-pro-w4a16) — GPTQ W4A16 for NVIDIA/SGLang. Multiple variants testing which layers to keep full precision.
+- [Fish issue #1168](https://github.com/fishaudio/fish-speech/issues/1168) — Community request for quantization/optimization
+- [MLX issue #1033](https://github.com/ml-explore/mlx/issues/1033) — The nn.quantize group_size blocker for small embeddings

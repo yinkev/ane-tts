@@ -652,3 +652,25 @@ If CoreML GPU-only gives 3x RTF, the paper becomes "CoreML vs MLX for TTS" not "
 If CoreML with attention is closer to MLX speeds, then ANE parallelism IS the contribution.
 
 THIS MUST BE ANSWERED BEFORE PROCEEDING TO ENGINEERING.
+
+---
+
+## CORRECTION: Selective quantization already exists
+*Date: 2026-03-18 ~10AM*
+
+### Finding
+`baicai1145/s2-pro-w4a16` on HuggingFace — GPTQ W4A16 of Fish S2 Pro.
+Slow AR quantized to 4-bit, fast AR stays BF16. Same approach we planned.
+
+BUT: It's PyTorch GPTQ for NVIDIA/SGLang. Not MLX. Not Mac.
+Mac users still have no quantized Fish S2 Pro option.
+
+### What this means for our contribution
+- Selective quantization concept is NOT novel (someone already did it for PyTorch)
+- But MLX selective quantization for Mac IS still a gap
+- The REAL novel contribution remains: ANE pipeline parallelism
+
+### CoreML vs MLX question
+My proxy benchmark was misleading. Pure FFN ≠ full transformer.
+Need to verify with real attention blocks before claiming CoreML is faster.
+Do not assume — verify. (Per CLAUDE.md feedback)

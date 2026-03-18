@@ -614,3 +614,41 @@ Real Fish weights confirm the proxy model results:
 3. Verify audio quality (ANE output must match GPU output)
 4. End-to-end RTF measurement
 5. Package + benchmark + ship
+
+---
+
+## OPEN QUESTION: Is MLX the real bottleneck, not hardware?
+*Date: 2026-03-18 ~10AM*
+
+### Observation
+CoreML proxy (30 FFN layers) runs at 9.5ms.
+MLX slow AR (36 layers with attention) runs at 34.7ms.
+Even scaling for the extra 6 layers and attention overhead, CoreML appears ~3x faster.
+
+### If True
+Converting Fish's full slow AR + fast AR to CoreML (GPU-only, no ANE) could give:
+- ~14.8ms per token (vs 66.7ms in MLX)
+- **4.5x speedup → 3.1x RTF**
+
+### Caveat
+The proxy is FFN-only. Real transformer has:
+- GQA attention with KV cache management
+- RoPE position embeddings
+- Dynamic sequence length handling
+
+These might close the gap between CoreML and MLX. NEED TO TEST WITH REAL TRANSFORMER BLOCKS.
+
+### The Three Paths (revised)
+
+| Path | Expected RTF | Confidence | Novelty |
+|------|-------------|------------|---------|
+| CoreML full model (GPU only) | 2-3x? | Medium (unverified) | Low |
+| CoreML + ANE parallelism | 2.5-4x? | Medium | High |
+| MLX optimization | 1.5-2x? | Low | Low |
+
+### Decision
+Test the real transformer block (with attention) on CoreML before committing to ANE parallelism.
+If CoreML GPU-only gives 3x RTF, the paper becomes "CoreML vs MLX for TTS" not "ANE parallelism."
+If CoreML with attention is closer to MLX speeds, then ANE parallelism IS the contribution.
+
+THIS MUST BE ANSWERED BEFORE PROCEEDING TO ENGINEERING.

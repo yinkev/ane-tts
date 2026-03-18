@@ -845,3 +845,32 @@ passing it as explicit inputs/outputs to the CoreML model.
 ANEMLL path is promising but needs model-specific adaptation work.
 The direct CoreML path (without KV cache) already gives 1.46x speedup.
 Recommend: ship the direct CoreML version first, add KV cache later for further optimization.
+
+---
+
+## Engineering Status: ANEMLL KV Cache Debugging
+*Date: 2026-03-18 ~12:30PM*
+
+### Progress
+- KV cache initialization is CORRECT: [72, 8, 256, 128]
+- The error is in the attention TRACING during Step 3 conversion
+- ANEMLL's converter traces the FFN/attention with specific input shapes
+- The 256 vs 128 mismatch is likely in how the converter builds the trace inputs
+
+### What's Needed to Fix
+1. Read ANEMML's `qwen_converter.py` Step 3 conversion code
+2. Find where it constructs trace inputs for the attention block
+3. Fix the dimension that confuses state_length (256) with head_dim (128)
+4. This is probably a single line in the trace input construction
+
+### Alternative: Ship Without Full KV Cache First
+Our direct CoreML conversion (Experiment 13) already gives 1.46x speedup.
+It doesn't have KV cache so it recomputes each token from scratch — slower
+than cached, but still faster than MLX.
+
+### Shipping Plan
+1. V0.1: Direct CoreML conversion (no KV cache) — 1.46x speedup, works NOW
+2. V0.2: Add ANEMML KV cache support — additional ~2x from caching
+3. V0.3: Add ANE pipeline parallelism — additional ~1.3x
+4. V0.4: Add selective quantization — additional ~1.7x
+Each version is independently shippable and measurable.

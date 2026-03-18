@@ -69,7 +69,7 @@ Fish S2 Pro (4.56B total)
 ├── Slow AR: 3.63B params (80%) — 36 transformer layers, dim=2560
 │     ├── GQA attention: 32 heads, 8 KV heads, head_dim=128
 │     ├── SwiGLU FFN: intermediate=9728
-│     └── Takes: 34.7ms per token (MLX), 23.8ms (CoreML GPU)
+│     └── Takes: 34.7ms per token (MLX), 24.3ms (CoreML GPU, VERIFIED)
 ├── Fast AR: 530M params (12%) — 4 transformer layers, same dims
 │     ├── 10 calls per semantic token (1 prefill + 9 codebook)
 │     └── Takes: 3.2ms per call (MLX), 3.4ms (CoreML GPU), 3.6ms (CoreML ANE)
@@ -90,7 +90,7 @@ Fish S2 Pro (4.56B total)
 │  ████████████████████████████  ██████████████████████████         │
 │  ◄──── Slow AR: 53.3% ──────► ◄──── Fast AR: 46.7% ──►         │
 │         34.7ms (MLX)                 3.2ms × 10 = 32ms           │
-│         23.8ms (CoreML)                                          │
+│         24.3ms (CoreML, VERIFIED)                                │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -160,16 +160,25 @@ Fish S2 Pro (4.56B total)
 
 ## End-to-End Pipeline Results
 
-### Measured (Experiment 14 — CoreML direct conversion, no ANEMLL)
+### VERIFIED — Direct CoreML Conversion (slow AR only)
 
-| Configuration | ms/token | RTF | vs MLX |
-|--------------|----------|-----|--------|
-| **MLX (current)** | **67.5** | **0.69x** | **baseline** |
-| CoreML GPU no-KV (measured) | 55.4 | 0.84x | 1.22x |
+| Configuration | ms/token (slow AR) | Slow AR RTF | vs MLX | Status |
+|--------------|-------------------|-------------|--------|--------|
+| **MLX (current)** | **34.7** | **1.34x** | **baseline** | measured |
+| **CoreML GPU (direct, VERIFIED)** | **24.3** | **1.91x** | **1.43x faster** | **VERIFIED (cos=0.9999988)** |
 
-### INVALID — ANEMLL Benchmarks (measured on broken model, DO NOT CITE)
+### ESTIMATED — Full Pipeline (slow AR + fast AR, not yet measured end-to-end)
 
-~~The following numbers were measured on a model with 3 weight-loading bugs (missing embeddings, dropped QK norms, broken QKV mapping). They represent inference on random/garbage data and are meaningless:~~
+| Configuration | ms/token | RTF | Notes |
+|--------------|----------|-----|-------|
+| MLX baseline | 67.5 | 0.69x | measured (Exp 5) |
+| CoreML sequential (est.) | 56.3 | 0.82x | 24.3ms slow AR + 32ms fast AR |
+| CoreML + Swift GCD parallelism (est.) | ~32 | ~1.45x | max(24.3, 32), from Exp 8/10 overlap data |
+| + quantization (est.) | lower | higher | not measured |
+
+### INVALID — ANEMLL Benchmarks (DO NOT CITE)
+
+ANEMLL approach abandoned. FFN chunks produced structurally wrong output (cos=0.19). All previous ANEMLL numbers are meaningless:
 
 | ~~Configuration~~ | ~~ms/token~~ | ~~RTF~~ | ~~Status~~ |
 |---|---|---|---|
@@ -177,25 +186,21 @@ Fish S2 Pro (4.56B total)
 | ~~GPU-only with KV cache~~ | ~~192.7~~ | ~~0.24x~~ | **INVALID** |
 | ~~ANE is 4.3x faster than GPU~~ | — | — | **INVALID** |
 
-All ANEMLL pipeline parallelism estimates derived from these numbers are also invalid. Re-benchmarking on the corrected model is required.
-
-### Estimated with Pipeline Parallelism (from valid research-phase data)
-
-These estimates use only the valid CoreML direct-conversion measurements (Experiment 14):
-
-| Configuration | ms/token | RTF | Notes |
-|--------------|----------|-----|-------|
-| CoreML sequential (measured) | 55.4 | 0.84x | Experiment 14 |
-| + Swift GCD 45% overlap (est.) | ~37.9 | ~1.22x | From Experiments 8, 10 |
-| + 8-bit slow AR quant (est.) | ~31.4 | ~1.48x | Projected |
-
 ```
-RTF Scale:
+RTF Scale (slow AR only):
+0.0x     0.5x     1.0x      1.5x      2.0x
+|         |         |          |          |
+|================================|          |  MLX slow AR: 1.34x
+|=============================================  CoreML GPU slow AR (VERIFIED): 1.91x
+                              ^
+                          REAL-TIME
+
+RTF Scale (full pipeline, estimated):
 0.0x     0.5x     1.0x      1.5x      2.0x
 |         |         |          |          |
 |================------|          |          |  MLX baseline: 0.69x
-|=========================--------|          |  CoreML GPU (no KV, measured): 0.84x
-|                         ????????|          |  ANEMLL corrected: UNKNOWN (pending re-benchmark)
+|=====================--|          |          |  CoreML sequential (est.): 0.82x
+|                       |==========|          |  CoreML + parallelism (est.): ~1.45x
                               ^
                           REAL-TIME
 ```
@@ -220,76 +225,47 @@ After 4-bit slow AR quantization:
 
 ## Prior Work Comparison
 
-| Solution | Platform | RTF | Available |
-|----------|----------|-----|-----------|
-| Fish SGLang (official) | NVIDIA A100/H100 | 0.195x (5.1x RT) | Linux only |
-| baicai1145 W4A16 GPTQ | NVIDIA | ~0.195x | Linux only |
-| mlx-audio BF16 | Mac (MLX) | 0.69x | Current |
-| ane-tts CoreML no-KV (ours) | Mac (CoreML) | 0.84x measured | In progress |
-| ane-tts ANEMLL (ours) | Mac (CoreML+ANE) | UNKNOWN | Pending re-benchmark on corrected model |
+| Solution | Platform | Slow AR ms/tok | Full RTF | Available |
+|----------|----------|---------------|----------|-----------|
+| Fish SGLang (official) | NVIDIA A100/H100 | — | 0.195x (5.1x RT) | Linux only |
+| baicai1145 W4A16 GPTQ | NVIDIA | — | ~0.195x | Linux only |
+| mlx-audio BF16 | Mac (MLX) | 34.7ms | 0.69x | Current |
+| **ane-tts direct CoreML (ours)** | **Mac (CoreML GPU)** | **24.3ms (VERIFIED)** | **~0.82x (est.)** | **In progress** |
 
-**Gap: No accelerated Fish S2 Pro on Mac beyond MLX. ANEMLL performance pending re-benchmark.**
+**Gap: No accelerated Fish S2 Pro on Mac beyond MLX. Our direct CoreML conversion is the first verified improvement (1.43x slow AR speedup). Full pipeline RTF not yet measured.**
 
 ## What's Been Created
 
 | Deliverable | Status |
 |------------|--------|
-| Fish slow AR CoreML model (3.63B, real weights) | ✅ /tmp/fish_slow_ar_real.mlpackage |
+| **Direct CoreML slow AR (3.63B, parity-verified)** | **✅ /tmp/fish_slow_ar_direct.mlpackage (VERIFIED, cos=0.9999988)** |
+| Direct CoreML conversion script | ✅ src/convert_direct.py |
+| Fish slow AR CoreML model (proxy weights, Exp 13) | ✅ /tmp/fish_slow_ar_real.mlpackage (superseded by direct conversion) |
 | Fish fast AR CoreML model (414M, real weights) | ✅ /tmp/fish_real_fast_ar.mlpackage |
 | ANE benchmark suite (maderix/ANE) | ✅ benchmarks/ |
 | Swift concurrent dispatch test | ✅ benchmarks/concurrent_swift_test.swift |
 | Fish profiling scripts | ✅ benchmarks/ |
-| Lab notebook (14 experiments) | ✅ docs/LAB_NOTEBOOK.md |
+| Lab notebook (14 experiments + direct conversion) | ✅ docs/LAB_NOTEBOOK.md |
 | Decision tree | ✅ docs/DECISION_TREE.md |
 | 24 references catalogued | ✅ docs/REFERENCES.md |
 
 ---
 
-## ANEMLL Conversion Progress (Engineering Phase)
+## ANEMLL Conversion — ABANDONED
 
-Research phase complete. ANEMLL conversion pipeline ran to completion, but the weight adapter had 3 critical bugs (see CORRECTION section above). The converted model was running on garbage weights. Re-conversion on the corrected weight adapter is required.
+ANEMLL approach abandoned after FFN chunks produced structurally wrong output (cos=0.19 even without quantization). Root cause never fully isolated but likely in ANEMLL's tracing/compilation pipeline. Additionally, Phase 1 ANEMLL parity tests had a hidden GQA bug (`.repeat` vs `.repeat_interleave`) — both sides had the same bug so tests passed, but neither matched Fish's actual behavior.
 
-### Bugs Fixed in ANEMLL
+The direct CoreML conversion (`src/convert_direct.py`) supersedes this path entirely.
 
-3 bugs in ANEMLL's Qwen2.5 converter prevented Fish S2 Pro conversion:
+### Historical: Bugs Fixed in ANEMLL (before abandonment)
 
-1. `qwen2_5_converter.py` lines 352, 359: `self.context_length` (128) used instead of `state_length` (256) for causal mask and update mask dimensions
-2. `qwen2_5_converter.py` lines 616, 726, 830: Same mask dimension mismatch (fixed by previous session)
-3. `qwen2_5_model.py` line 503: `self.config.context_length` used instead of `self.config.state_length` for k_seq_len in forward_prefill — caused attn_logits (256) vs mask (128) shape mismatch
+3 bugs in ANEMLL's Qwen2.5 converter and 4 bugs in the weight adapter were fixed but ultimately irrelevant since the ANEMLL compilation pipeline itself produced incorrect output.
 
-### Conversion Results
+### Historical: Conversion Artifacts (INVALID, do not use)
 
-| Part | File | Size | Quantization |
-|------|------|------|-------------|
-| Embeddings | fish_embeddings.mlpackage | 761 MB | None |
-| FFN Decode (x4) | fish_FFN_lut4_chunk_01-04of04 | 4 x 435 MB | 4-bit LUT |
-| Prefill (x4) | fish_prefill_lut4_chunk_01-04of04 | 4 x 435 MB | 4-bit LUT |
-| LM Head | fish_lm_head_lut6.mlpackage | 288 MB | 6-bit LUT |
-| Combined FFN+PF (x4) | fish_FFN_PF_lut4_chunk_01-04of04 | 4 x 435 MB | 4-bit LUT |
-| **Total compiled** | **6 .mlmodelc files** | **~3.5 GB** | **Mixed** |
-
-### Pipeline Status
-
-Previous conversion ran on broken weight adapter. Steps completed structurally but need re-run:
-
-| Step | Previous Status | Current Status |
-|------|----------------|----------------|
-| Step 1 (Embeddings) | Ran | NEEDS RE-CONVERSION (weight adapter fixed) |
-| Step 2 (LM Head) | Ran | NEEDS RE-CONVERSION |
-| Step 3 (FFN/Decode) | Ran | NEEDS RE-CONVERSION |
-| Step 4 (Prefill) | Ran | NEEDS RE-CONVERSION |
-| Step 5 (Combine) | Ran | NEEDS RE-RUN |
-| Step 6 (Compile) | Ran | NEEDS RE-RUN |
-| Step 7 (Meta.yaml) | Ran | NEEDS RE-RUN |
-| Step 8 (Benchmark) | Ran (invalid data) | NEEDS RE-BENCHMARK |
-
-### Initial Benchmark (Embeddings + LM Head only) — INVALID
-
-These were measured on the broken model (garbage weights). Timing may or may not be representative since model structure was correct even if weights were wrong, but treat as unverified:
-
-| Component | GPU | ANE+GPU | Status |
-|-----------|-----|---------|--------|
-| Embeddings | 0.59 ms | 0.66 ms | UNVERIFIED |
-| LM Head (6-bit) | 5.92 ms | 5.36 ms | UNVERIFIED |
-
-*Engineering phase: re-conversion on corrected weights required before any benchmark claims.*
+| Part | File | Size | Status |
+|------|------|------|--------|
+| Embeddings | fish_embeddings.mlpackage | 761 MB | INVALID |
+| FFN Decode (x4) | fish_FFN_lut4_chunk_01-04of04 | 4 x 435 MB | INVALID (cos=0.19) |
+| LM Head | fish_lm_head_lut6.mlpackage | 288 MB | INVALID |
+| **Total** | **~3.5 GB** | **Mixed** | **ABANDONED** |

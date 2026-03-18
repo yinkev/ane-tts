@@ -1,40 +1,41 @@
 # ane-tts
 
-> Accelerating TTS inference on Apple Silicon by leveraging the Neural Engine. Targeting Fish S2 Pro (5B) on consumer Macs.
+> Accelerating TTS inference on Apple Silicon via CoreML. Targeting Fish S2 Pro (5B) on consumer Macs.
 
 ## Problem
 Fish S2 Pro (5B params, best open-source TTS) runs at 0.69x RTF on Metal GPU via MLX. Sub-realtime. The ANE (15.8 TOPS) sits idle during inference.
 
 ## Approach
-Two backends: direct ANE access (maderix/ANE) and CoreML (stable, for everyone).
-Pipeline parallelism: slow AR on GPU + fast AR on ANE concurrently.
-ANEMLL for ANE-optimized CoreML conversion with KV cache.
+Direct CoreML conversion of Fish's slow AR transformer (src/convert_direct.py). Faithful architecture: QK norm, RoPE, GQA with correct repeat_interleave, SwiGLU, no bias. Pipeline parallelism: slow AR on GPU + fast AR on ANE concurrently.
 
 ## Status
-Research phase COMPLETE (14 experiments on M2 Max). Engineering phase ACTIVE.
+Research phase COMPLETE (14 experiments on M2 Max). Direct CoreML conversion VERIFIED. ANEMLL path ABANDONED.
 
-### What is proven
-- Research-phase timing data (Experiments 0.2-14): pipeline profiling, CoreML vs MLX throughput, ANE characterization, Swift GCD overlap — valid, weight-independent measurements
-- CoreML direct conversion (no KV cache): 0.84x RTF measured (Experiment 14)
-- CoreML is 1.46x faster than MLX for slow AR (23.8ms vs 34.7ms per token)
-- Swift GCD gives 45-51% GPU+ANE overlap for pipeline parallelism
-- Weight adapter correctness: 398 tensors verified, embedding parity (max_err=0.0), single-layer parity (max_err < 0.001), full-model one-step parity (max_err=0.000038, top-1/top-5 match)
+### PROVEN (verified with parity tests)
+- Slow AR: 24.3ms/token on CoreML GPU — 1.43x faster than MLX (34.7ms)
+- Slow AR RTF: 46.4ms audio / 24.3ms = 1.91x real-time (slow AR stage only)
+- CoreML parity: cos=0.9999988, top-5 tokens identical to PyTorch reference
+- Model: /tmp/fish_slow_ar_direct.mlpackage (325 tensors from Fish safetensors)
+- Research-phase timing data (Experiments 0.2-14): pipeline profiling, ANE characterization, Swift GCD 45-51% overlap
 
-### What is NOT proven (pending re-conversion and re-benchmark)
-- KV-cache multi-step parity
-- ANEMLL-converted model performance (previous benchmarks INVALID — ran on broken weights)
+### ESTIMATED (from valid components, not measured end-to-end)
+- Full pipeline sequential: 24.3 + 32 = 56.3ms/token, 0.82x RTF
+- Full pipeline with parallelism: max(24.3, 32) = 32ms/token, 1.45x RTF
+
+### NOT proven
+- KV cache integration
+- Full pipeline end-to-end RTF
 - Audio output quality
-- Any RTF claim beyond the 0.84x CoreML-direct measurement
-- Previous "45ms" and "1.03x RTF" numbers are INVALID
+- Quantization impact
 
-### ANEMLL conversion
-Previous conversion completed structurally but used a broken weight adapter (3 bugs: missing embeddings, dropped QK norms, broken QKV split). Re-conversion required on corrected weights.
+### ABANDONED
+- ANEMLL path: FFN chunks produced cos=0.19 output. All ANEMLL benchmarks (45ms, 1.03x RTF) are INVALID.
+- Phase 1 ANEMLL parity tests had hidden GQA bug (.repeat vs .repeat_interleave) — both sides wrong, tests passed anyway.
 
 ## Key Tools
+- coremltools — Apple's official CoreML conversion (primary path)
 - maderix/ANE (github.com/maderix/ANE) — direct ANE access, 6.2K stars
-- ANEMLL (github.com/Anemll/Anemll) — LLMs on ANE
-- coremltools — Apple's official CoreML conversion
-- mlx-audio — current TTS inference (Metal GPU)
+- mlx-audio — current TTS inference baseline (Metal GPU)
 
 ## Models
 - Fish S2 Pro 5B BF16 (~10GB) — target model, best quality

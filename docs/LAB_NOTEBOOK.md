@@ -1023,6 +1023,82 @@ FFN chunks (the heavy transformer layers) require KV cache state management for 
 
 ---
 
+## Experiment 15: Direct CoreML Conversion — VERIFIED
+*Date: 2026-03-18*
+
+### Background
+
+ANEMLL approach abandoned. FFN chunks produced structurally wrong output (cos=0.19 even without quantization). Root cause likely in ANEMLL's tracing/compilation pipeline. Built our own direct CoreML conversion instead.
+
+### Method
+
+Created `src/convert_direct.py` — a faithful reimplementation of Fish's slow AR architecture:
+- QK norm (after projection, before RoPE)
+- RoPE (rotary position embeddings)
+- GQA with correct `repeat_interleave` (not `.repeat`)
+- SwiGLU FFN
+- No bias (matching Fish config)
+- Loads 325 tensors directly from Fish safetensors (no adapter needed)
+
+Conversion path: PyTorch model with real weights -> `torch.jit.trace` -> `coremltools.convert` -> `.mlpackage`
+
+### GQA Bug Discovery
+
+During development, discovered that the Phase 1 ANEMLL parity tests had a GQA bug. The KV head expansion used `.repeat(1, 1, num_heads // num_kv_heads, 1)` instead of `.repeat_interleave(num_heads // num_kv_heads, dim=1)`. These produce different tensor layouts:
+- `.repeat` tiles the entire tensor: `[h0,h1,h0,h1,h0,h1,h0,h1]`
+- `.repeat_interleave` repeats each element: `[h0,h0,h0,h0,h1,h1,h1,h1]`
+
+Both the reference model and the ANEMLL-converted model had the same bug, so parity tests passed — but neither matched Fish's actual GQA behavior. This means all prior "parity verified" claims for the ANEMLL path were comparing two equally-wrong models.
+
+### Parity Verification
+
+| Test | Result |
+|------|--------|
+| PyTorch model vs Fish reference (same input) | cos=0.9999988 |
+| CoreML model vs PyTorch model | cos=0.9999988, top-5 identical |
+| Token generation test | Produces real Fish semantic tokens (151K-155K range) |
+| Steady-state token generation | ~25ms/token |
+
+### Benchmark Results (model: `/tmp/fish_slow_ar_direct.mlpackage`)
+
+| Compute Unit | ms/token |
+|-------------|----------|
+| **GPU (CPU_AND_GPU)** | **24.3** |
+| ANE+GPU (ALL) | 24.4 |
+| ANE only (CPU_AND_NE) | 174.1 |
+
+Model runs on GPU regardless of compute unit setting. Unquantized fp16 model doesn't benefit from ANE — the ANE either delegates back to GPU or runs extremely slowly (174ms).
+
+### Key Numbers (all VERIFIED)
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Slow AR CoreML GPU | 24.3 ms/token | VERIFIED |
+| Slow AR MLX | 34.7 ms/token | measured (Exp 5) |
+| CoreML vs MLX speedup | 1.43x | VERIFIED |
+| Audio per semantic token | 46.4 ms | measured (Exp 12) |
+| Slow AR RTF | 46.4/24.3 = 1.91x | VERIFIED |
+| Full pipeline sequential (est.) | 24.3 + 32 = 56.3 ms | ESTIMATED |
+| Full pipeline parallel (est.) | max(24.3, 32) = 32 ms | ESTIMATED |
+| Full pipeline sequential RTF (est.) | 0.82x | ESTIMATED |
+| Full pipeline parallel RTF (est.) | 1.45x | ESTIMATED |
+
+### Conclusions
+
+1. **Direct CoreML conversion works and is verified.** No need for ANEMLL.
+2. **Slow AR alone is real-time** (1.91x RTF) but full pipeline includes fast AR (32ms).
+3. **Full pipeline needs parallelism** to achieve real-time: sequential is 0.82x, parallel is ~1.45x.
+4. **No KV cache yet** — adding it would improve further (no recomputation of past tokens).
+5. **The GQA bug invalidates all prior ANEMLL parity claims** — only the direct conversion is trustworthy.
+
+### What's Next
+- KV cache integration for the direct CoreML model
+- Fast AR CoreML conversion (already have one from Exp 10, may need re-verification)
+- Full pipeline end-to-end RTF measurement
+- Audio quality verification
+
+---
+
 ## CORRECTION: Weight Adapter Had 3 Critical Bugs — All ANEMLL Benchmarks Invalid
 *Date: 2026-03-18*
 

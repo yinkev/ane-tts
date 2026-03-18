@@ -258,3 +258,40 @@ This is because:
 |------|----------|-----------|
 | 2026-03-18 | CoreML ANE for Fish layers: NOT viable | GPU is faster at all seq lengths. ANE overhead exceeds compute benefit. |
 | 2026-03-18 | Only path left: small draft model on ANE | Need a <1B model that ANE runs well. Qwen3-TTS 0.6B CoreML already exists on HuggingFace. |
+
+---
+
+## Experiment 4: Fish S2 Pro Pipeline Profiling — WHERE IS THE TIME?
+*Date: 2026-03-18 ~7AM*
+*Method: Monkey-patched _generate_codes_for_batch and _decode_codes with timing*
+
+### THE KEY RESULT
+
+| Component | Time | % of Total |
+|-----------|------|-----------|
+| **AR Transformer (code generation)** | **6.27s** | **95.9%** |
+| Codec Decoder (codes → audio) | 0.27s | 4.1% |
+| Other (tokenizer, overhead) | 0.00s | 0.0% |
+
+Audio: 4.55s. Total: 6.54s. RTF: 0.70x.
+
+### What This Means
+
+1. **Codec decoder is NOT the bottleneck.** Moving it to ANE would save 0.27s out of 6.54s (4%). Not worth the effort.
+2. **The AR transformer doing sequential token-by-token generation is 96% of the time.**
+3. **Speculative decode directly attacks the bottleneck** — reduces the number of sequential AR forward passes.
+4. **SGLang's 0.195 RTF likely comes from AR transformer optimizations** (better KV cache, fused ops) not hardware differences alone.
+5. **Angle #2 (slow AR on GPU, fast AR on ANE in parallel) is worth revisiting** — if the fast AR's 4 layers can run on ANE while the slow AR's 36 layers run on GPU, we get pipeline parallelism within the same model.
+
+### Revised Priority
+
+| Approach | Attacks bottleneck? | Expected impact |
+|----------|-------------------|-----------------|
+| Speculative decode (draft on ANE) | YES (reduces AR steps) | High |
+| Pipeline parallelism (slow AR GPU + fast AR ANE) | YES (parallel AR) | Medium |
+| Optimize mlx-audio AR implementation | YES (faster per step) | Medium |
+| Codec on ANE | NO (only 4%) | None |
+| Direct Fish on ANE | NO (ANE slower for AR) | None |
+
+### THIS IS THE MOST IMPORTANT FINDING SO FAR.
+Without this profiling, we would have wasted time on codec optimizations or full-model ANE conversion.

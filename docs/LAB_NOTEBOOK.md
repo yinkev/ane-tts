@@ -674,3 +674,38 @@ Mac users still have no quantized Fish S2 Pro option.
 My proxy benchmark was misleading. Pure FFN ≠ full transformer.
 Need to verify with real attention blocks before claiming CoreML is faster.
 Do not assume — verify. (Per CLAUDE.md feedback)
+
+---
+
+## Experiment 11: Real Transformer Block (with GQA attention) CoreML vs MLX
+*Date: 2026-03-18 ~10:15AM*
+
+### Method
+Built full transformer block with GQA attention (32 heads, 8 KV heads, SDPA),
+RMSNorm, SwiGLU FFN. Matched Fish S2 Pro exact dims. Stacked 36 blocks.
+Converted to CoreML. Benchmarked GPU.
+
+### Results
+
+| Config | CoreML GPU | MLX (profiled) | Ratio |
+|--------|-----------|----------------|-------|
+| 1 block | 1.305 ms | 0.964 ms | 0.74x (CoreML slower) |
+| **36 blocks** | **23.8 ms** | **34.7 ms** | **1.46x (CoreML faster)** |
+
+CoreML is 1.46x faster for the full slow AR — not the 3x I estimated from FFN proxy.
+The real speedup comes from CoreML's graph-level optimization over 36 blocks.
+
+### Corrected Combined Projections (real data)
+
+| Configuration | Per-token | RTF |
+|--------------|-----------|-----|
+| MLX baseline | 66.7ms | 0.69x |
+| CoreML only (GPU) | 57.8ms | 0.80x |
+| CoreML + ANE parallelism (45%) | 42.5ms | 1.08x |
+| CoreML + ANE + 8-bit quant (slow AR) | 32.7ms | 1.41x |
+
+### Key Takeaway
+CoreML alone doesn't solve it (0.80x still sub-realtime).
+ANE parallelism gets to ~1.08x (barely real-time).
+Quantization + parallelism gets to 1.41x (comfortably real-time).
+All three together is the contribution.

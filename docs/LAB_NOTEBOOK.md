@@ -916,3 +916,32 @@ Fish S2 Pro's slow AR is now in CoreML format with:
 6. Compile (Step 6)
 7. Wire into Fish generation loop
 8. Measure end-to-end RTF
+
+---
+
+## ANEMLL Conversion Progress
+*Date: 2026-03-18 ~1:30PM*
+
+### Steps Completed
+- Step 1 (Embeddings): ✅
+- Step 2 (LM Head): ✅  
+- Step 3 (FFN/Decode): ✅ (4 chunks × 435MB = 1.74GB, 4-bit LUT)
+- Step 4 (Prefill): ❌ (same mask dimension issue, needs additional fix in model's prefill path)
+- Step 5-8: Blocked by Step 4
+
+### What We Have
+The DECODE path (token generation) is fully converted. This is the one that matters
+for RTF — it's called 108 times to generate 5 seconds of audio.
+
+The PREFILL path (processing input prompt) failed. Prefill only runs once and is fast
+anyway. Skipping it for now doesn't block the speed measurement.
+
+### Fix Applied
+Changed `self.context_length` to `model.model.config.state_length` in 3 places in
+`qwen2_5_converter.py`. The same fix is needed in the model's `process_layer_prefill`
+function or in the converter's prefill wrapper for the remaining mask creation.
+
+### Next
+Can potentially test the FFN chunks directly without the full ANEMLL pipeline.
+Load them as CoreML models, benchmark on ANE, and measure token generation speed
+with KV cache.

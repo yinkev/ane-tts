@@ -813,3 +813,35 @@ Key deliverables created:
 - ANE benchmark suite (maderix/ANE on M2 Max)
 - Swift concurrent dispatch test
 - Full profiling data for Fish S2 Pro pipeline
+
+---
+
+## Engineering Phase: ANEMLL Integration Attempt
+*Date: 2026-03-18 ~12PM*
+
+### What Works
+- Fish → Qwen weight adapter: splits fused QKV, remaps all 397 tensors
+- ANEMLL conversion Step 1 (embeddings): ✅
+- ANEMML conversion Step 2 (LM head): ✅
+
+### What Fails
+- Step 3 (FFN/attention): RuntimeError tensor size mismatch (256 vs 128)
+- ANEMLL's KV cache uses STATE_LENGTH=256 as a fixed dimension
+- Fish's head_dim=128, creating a mismatch in attention reshaping
+- ANEMLL's Qwen model code indexes cache as [batch, heads, state_length, head_dim]
+  but somewhere the dimensions get confused
+
+### Fix Needed
+- Modify ANEMLL's qwen2_5_model.py to handle Fish's specific dimensions
+- Or: set ANEMLL's STATE_LENGTH to match context_length (128 in our test)
+- Or: create a Fish-specific model class in ANEMLL
+
+### Alternative Path
+Skip ANEMLL entirely. Use our already-working CoreML conversion (23.8ms, real weights).
+The KV cache limitation means we'd need to manage cache ourselves in Python,
+passing it as explicit inputs/outputs to the CoreML model.
+
+### Status
+ANEMLL path is promising but needs model-specific adaptation work.
+The direct CoreML path (without KV cache) already gives 1.46x speedup.
+Recommend: ship the direct CoreML version first, add KV cache later for further optimization.

@@ -102,8 +102,8 @@ def check_weight_compatibility():
 def create_qwen_compatible_config():
     """Create a Qwen-format config.json from Fish's config."""
     return {
-        "architectures": ["Qwen2ForCausalLM"],
-        "model_type": "qwen2",
+        "architectures": ["Qwen3ForCausalLM"],
+        "model_type": "qwen3",
         "hidden_size": FISH_CONFIG["dim"],
         "num_hidden_layers": FISH_CONFIG["n_layer"],
         "num_attention_heads": FISH_CONFIG["n_head"],

@@ -3,6 +3,9 @@
 __pycache__/
 *.pyc
 *.egg-info/
+benchmarks/concurrent_swift_test
+benchmarks/fish_ane_bench
+*.dSYM/
 
 # Models (too large)
 *.safetensors

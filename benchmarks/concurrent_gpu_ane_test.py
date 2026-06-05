@@ -12,8 +12,8 @@ Method:
 4. If concurrent_time ≈ max(gpu_time, ane_time), they truly run in parallel
 5. If concurrent_time ≈ gpu_time + ane_time, they serialize (no benefit)
 
-Run with ANEMLL's Python 3.9 env:
-    source ~/Projects/anemll/env-anemll/bin/activate
+Run from a prepared repo environment:
+    source .venv/bin/activate
     python benchmarks/concurrent_gpu_ane_test.py
 """
 

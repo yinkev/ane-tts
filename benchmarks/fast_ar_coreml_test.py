@@ -5,8 +5,8 @@ This is THE critical experiment. If the fast AR runs at ≤3.2ms on ANE
 (matching GPU), then heterogeneous pipeline parallelism works and we
 get ~1.9x speedup → real-time Fish S2 Pro.
 
-Run with ANEMLL's Python 3.9 env:
-    source ~/Projects/anemll/env-anemll/bin/activate
+Run from a prepared repo environment:
+    source .venv/bin/activate
     python benchmarks/fast_ar_coreml_test.py
 """
 

@@ -11,14 +11,16 @@ Phases:
 """
 
 import sys
+import os
+from pathlib import Path
 import torch
 import numpy as np
 
-sys.path.insert(0, "/Users/kyin/Projects/anemll")
-sys.path.insert(0, "/Users/kyin/Projects/fish-speech")
+sys.path.insert(0, str(Path(os.environ.get("ANEMLL_REPO", "~/Projects/anemll")).expanduser()))
+sys.path.insert(0, str(Path(os.environ.get("FISH_SPEECH_REPO", "~/Projects/fish-speech")).expanduser()))
 
-FISH_MODEL_DIR = "/Users/kyin/Models/fish-audio-s2-pro-mlx-bf16"
-ANEMLL_CKPT_DIR = "/tmp/fish_slow_ar_qwen_format"
+FISH_MODEL_DIR = str(Path(os.environ.get("FISH_MODEL_DIR", "~/Models/fish-audio-s2-pro-mlx-bf16")).expanduser())
+ANEMLL_CKPT_DIR = os.environ.get("ANEMLL_CKPT_DIR", "/tmp/fish_slow_ar_qwen_format")
 
 # Tolerances
 ATOL_FP16 = 0.01    # float16 conversion introduces ~1e-3 error

@@ -49,6 +49,25 @@ The slow AR is only one stage. Full pipeline = slow AR + fast AR (10 codebook ca
 - macOS 15+ recommended
 - 16GB+ unified memory (96GB for 5B models)
 
+## Quick Start
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+make smoke
+```
+
+Model-dependent conversion and parity tests expect local Fish S2 Pro and ANEMLL
+assets. Configure them with environment variables instead of editing paths:
+
+```bash
+export FISH_MODEL_DIR="$HOME/Models/fish-audio-s2-pro-mlx-bf16"
+export ANEMLL_REPO="$HOME/Projects/anemll"
+export FISH_SPEECH_REPO="$HOME/Projects/fish-speech"
+export ANEMLL_CKPT_DIR="/tmp/fish_slow_ar_qwen_format"
+```
+
 ## Key Finding: GQA Bug
 
 During development, discovered that prior ANEMLL parity tests had a GQA bug: `.repeat` vs `.repeat_interleave` for KV head expansion. Both sides of the comparison had the same bug, so tests passed -- but neither matched Fish's actual behavior. The direct conversion (`src/convert_direct.py`) fixes this with correct `repeat_interleave`.

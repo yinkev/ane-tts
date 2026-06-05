@@ -12,14 +12,16 @@ Follows the other agent's minimum acceptable order:
 import sys
 import math
 import json
+import os
+from pathlib import Path
 import torch
 import torch.nn.functional as F
 import numpy as np
 
-sys.path.insert(0, "/Users/kyin/Projects/anemll")
+sys.path.insert(0, str(Path(os.environ.get("ANEMLL_REPO", "~/Projects/anemll")).expanduser()))
 
-FISH_MODEL_DIR = "/Users/kyin/Models/fish-audio-s2-pro-mlx-bf16"
-ANEMLL_CKPT_DIR = "/tmp/fish_slow_ar_qwen_format"
+FISH_MODEL_DIR = str(Path(os.environ.get("FISH_MODEL_DIR", "~/Models/fish-audio-s2-pro-mlx-bf16")).expanduser())
+ANEMLL_CKPT_DIR = os.environ.get("ANEMLL_CKPT_DIR", "/tmp/fish_slow_ar_qwen_format")
 
 torch.set_grad_enabled(False)
 

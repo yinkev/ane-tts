@@ -19,10 +19,11 @@ import numpy as np
 import time
 import math
 import json
+import os
 from pathlib import Path
 from safetensors.torch import safe_open
 
-MODEL_DIR = Path.home() / "Models/fish-audio-s2-pro-mlx-bf16"
+MODEL_DIR = Path(os.environ.get("FISH_MODEL_DIR", "~/Models/fish-audio-s2-pro-mlx-bf16")).expanduser()
 
 # Fish S2 Pro slow AR config
 DIM = 2560

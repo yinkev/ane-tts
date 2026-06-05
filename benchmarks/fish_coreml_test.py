@@ -4,8 +4,8 @@ Test: Convert a single Fish S2 Pro transformer layer to CoreML and run on ANE.
 This extracts one transformer block from Fish's AR model, traces it,
 converts to CoreML, and benchmarks on ANE vs CPU.
 
-Run with ANEMLL's Python 3.9 env:
-    source ~/Projects/anemll/env-anemll/bin/activate
+Run from a prepared repo environment:
+    source .venv/bin/activate
     python benchmarks/fish_coreml_test.py
 """
 

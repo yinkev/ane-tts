@@ -61,7 +61,7 @@ EXPECTED_TOTAL_OUTPUT = FISH_CONFIG["n_layer"] * (EXPECTED_PER_LAYER + 2) + EXPE
 
 def check_weight_compatibility():
     """Verify ALL expected Fish slow AR weights exist in the checkpoint."""
-    model_dir = Path.home() / "Models/fish-audio-s2-pro-mlx-bf16"
+    model_dir = Path(os.environ.get("FISH_MODEL_DIR", "~/Models/fish-audio-s2-pro-mlx-bf16")).expanduser()
     index_file = model_dir / "model.safetensors.index.json"
 
     with open(index_file) as f:
@@ -267,7 +267,7 @@ def save_as_qwen_checkpoint(output_dir):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    model_dir = Path.home() / "Models/fish-audio-s2-pro-mlx-bf16"
+    model_dir = Path(os.environ.get("FISH_MODEL_DIR", "~/Models/fish-audio-s2-pro-mlx-bf16")).expanduser()
 
     # Save config (with attention_qk_norm=True)
     config = create_qwen_compatible_config()
@@ -305,5 +305,5 @@ if __name__ == "__main__":
     print()
 
     # Save remapped checkpoint
-    output_dir = Path("/tmp/fish_slow_ar_qwen_format")
+    output_dir = Path(os.environ.get("ANEMLL_CKPT_DIR", "/tmp/fish_slow_ar_qwen_format"))
     save_as_qwen_checkpoint(output_dir)
